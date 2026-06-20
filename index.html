@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Numa Galipov">
+<meta name="theme-color" content="#fbf9f4">
+<title>Numa Galipov</title>
+<style>
+  @font-face {
+    font-family: 'SlavonTitle';
+    src: url('data:font/woff2;base64,d09GMgABAAAAAAPwAA0AAAAAB5gAAAOeAAEAQgAAAAAAAAAAAAAAAAAAAAAAAAAABmAAdBEICoVghEQBNgIkAzATPAsaAAQgBYNSByAMBxv+BUguCkw3x7WQ3NwMN8mj6z6iQ3yKh/+/77fPeffPFY2YYPgHbaJxxgL83AowkCwcKQx0AInza1De+7OoNoWZUumrpI+bxJuJo3Mr+wmcLrmK6HuZQlNe7rP8l0H81drq/4O3+9AQq6TEEColiS2i7d873qikl9CgFeYbJs08NCqETEqYW2MgE4RUibFOWUtEolcbaFKQaVCD/KATAA/5g/gl+wUpB2bgz2/t5eWjACWLHaqg+fQLBBD/+Q6sICBBA+YxBMzjaijm6WM4+2LEbbg/l3kYj+KxPOv/wICM5DG/+f+h95654rJzzjhtL4L8Aqn/occ6g14G9N0fxAAAxVNBN4ypKxB0ztqMG3FuaGShz43tebEEEZKaIDoQIQbzK45p0x4mUanD5NB65r3nBkKGmy2MLCYCWWPiXtDtAqCbtUd1arxOaN9snYiCELS433YhQTQlc8NniZaXyi2AWLJoj6C2ckF0qB5kSkTZYpylS81HpCRN2EfY8MMSmngQdLpHFElM1EtMhIoONMwmngg8AdBK4V3izCReuaTENsUqG3cqA+/A8ym1nlOibU1to2U2tpBqpmrnxT9RKgIZkV2cJx26fXtc2pGIYsivwImeZbkXzw/PuYDq7+zo9d4xnucXyxX+QTHKxabSnNf/ioIutxePuncFDydxypTeWz2TVHEtcarJXTc7p6jiYIwTzycmtMcMLfh1tiAxa2Jbosp4IxZeVJJaZwX7T/NvSFK0RnxHvLJ5pNEoo03hXPgCl3gmuMeF7QzNcU/wXBJ4JPFix0UUTCLarrZFKMeVuLY41QeVEJUTmG3nRg9Z0Gs5rooYN2Sg37DwQWsSN3dsBiBASLh7cCulWi/qq6bEXgBfa3OInPH/xkoNOwS6qDP2M0rl0YDtAVU950x8gTiGkm1E5SLI8YlFfOOe2fBShkWe4BPXyZmGtt0PHxBgFaHBHGWI4nUjSl0gjVqc0dRIq67UCZAo4kYzsu8FJAgEDCmAjjI6UrQAP6BdhLE7LkrXBxcT45+U21xqLCPq3dQ5RhFqs8Vr05IaB+CunsWezF+AAN7sKbhJawcyYbsGtpldQJQGSzBfJ12Q2Lc18NXTo2xy62CtQ8MoDwfOcIlWBqjMFNkJsvyZ0WIDjtJhaPBqJW/YCfINMDJQ942RVbR0Asn2su7cP2I/Qxp9TaZoZ3rXbgsAwXcYiUl3kpW85RVdDVW3krW/kP+jn/lkAAAA') format('woff2');
+    font-display: swap;
+  }
+  :root {
+    --bg: #fbf9f4;
+    --surface: #ffffff;
+    --ink: #1f1c17;
+    --ink-soft: #6b6358;
+    --line: #e7e1d6;
+    --accent: #c8693a;
+    --accent-soft: #fbe3d3;
+    --hit: #ffd54a;
+    --hit-active: #ff9e2c;
+    --rule: #1f1c17;
+    --shadow: 0 1px 2px rgba(40,32,20,.06), 0 4px 14px rgba(40,32,20,.05);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column;
+    height: 100dvh; overflow: hidden;
+  }
+
+  header {
+    flex: 0 0 auto;
+    padding: max(env(safe-area-inset-top), 12px) 14px 10px;
+    background: #0c0b0a;
+    border-bottom: 1px solid #000; z-index: 20;
+  }
+  .titlerow { display: grid; grid-template-columns: 1fr auto; align-items: center; margin-bottom: 10px; }
+  .brandwrap { grid-column: 1 / -1; text-align: center; order: -1; margin-bottom: 8px; }
+  .histwrap { grid-column: 2; }
+  .brand {
+    font-family: 'SlavonTitle', 'PT Serif', Georgia, serif;
+    font-weight: 400; font-size: 30px; line-height: 1.05; letter-spacing: .5px;
+    color: #ffffff;
+  }
+  .brand span { color: #ffffff; }
+  .syncpill { font-size: 11px; color: #b8b0a4; background: #1c1a17; border: 1px solid #2a2723; border-radius: 20px; padding: 3px 9px; }
+  .histbtn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #2a2723; background: #1c1a17; color: #cfc7ba; font-size: 15px; cursor: pointer; display: grid; place-items: center; }
+  .histbtn:active { transform: scale(.92); }
+  .histbtn:disabled { opacity: .32; cursor: default; }
+
+  .searchwrap { position: relative; display: flex; align-items: center; gap: 6px; }
+  .searchbox {
+    flex: 1 1 auto; min-width: 0; display: flex; align-items: center;
+    background: #ffffff; border: 1.5px solid #000;
+    border-radius: 14px; padding: 0 10px;
+    transition: border-color .15s;
+  }
+  .searchbox:focus-within { border-color: var(--accent); }
+  .searchbox svg { width: 18px; height: 18px; color: var(--ink-soft); flex: 0 0 auto; }
+  #search { flex: 1; border: none; outline: none; background: transparent; font: inherit; font-size: 16px; padding: 11px 8px; color: var(--ink); }
+  .nav { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-soft); white-space: nowrap; flex: 0 0 auto; }
+  .nav button { border: none; background: var(--accent-soft); color: var(--accent); width: 28px; height: 30px; border-radius: 9px; font-size: 16px; font-weight: 700; cursor: pointer; display: grid; place-items: center; }
+  .nav button:active { transform: scale(.92); }
+  .nav .tally { min-width: 32px; text-align: center; font-variant-numeric: tabular-nums; font-size: 11px; }
+  .clearbtn { border: none; background: transparent; color: var(--ink-soft); font-size: 20px; cursor: pointer; padding: 4px 4px; }
+
+  main {
+    flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+    padding: 14px 10px calc(96px + env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
+  }
+  .columns { display: flex; gap: 10px; align-items: flex-start; }
+  .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; min-height: 120px; border-radius: 16px; transition: background .12s; }
+  .col.coltarget { background: rgba(200,105,58,.10); }
+  .coldrop { flex: 1 1 auto; min-height: 60px; }
+  .card {
+    break-inside: avoid; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 16px;
+    padding: 13px 14px 12px; margin: 0 0 10px; box-shadow: var(--shadow);
+    cursor: pointer; transition: transform .12s; position: relative;
+  }
+  .card:active { transform: scale(.985); }
+  .card.dim { opacity: .35; }
+  .card.match { box-shadow: var(--shadow), 0 0 0 2px var(--accent); }
+  .card.dragging { opacity: .4; }
+  .card.dragover-top { box-shadow: var(--shadow), 0 -3px 0 0 var(--accent); }
+  .card.dragover-bot { box-shadow: var(--shadow), 0 3px 0 0 var(--accent); }
+  .draghandle { position: absolute; top: 8px; right: 10px; color: var(--ink-soft); font-size: 16px; cursor: grab; opacity: .45; touch-action: none; padding: 4px; line-height: 1; }
+  .card.coloured .draghandle { color: rgba(0,0,0,.5); }
+  .card-title { font-weight: 700; font-size: 15px; line-height: 1.25; margin: 0 0 5px; letter-spacing: -0.01em; }
+
+  /* two-column note display with central rule */
+  .grid { position: relative; }
+  .grid::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 50%;
+    width: 1.5px; background: var(--rule); opacity: .85; transform: translateX(-50%);
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0; align-items: baseline; }
+  .cell { font-size: 13.5px; line-height: 1.3; padding: 0 9px; min-height: 1em; white-space: nowrap; overflow: hidden; }
+  .cell.l { text-align: right; }
+  .cell.r { text-align: left; color: var(--ink); }
+  .row.head { margin-top: 9px; }
+  .row.head:first-child { margin-top: 0; }
+  .row.head .cell { font-weight: 700; }
+  .row.spacer { height: 10px; }
+  .card-body { padding-bottom: 6px; }
+  .card-body.clamp .grid { max-height: 230px; overflow: hidden; }
+
+  mark { background: var(--hit); color: var(--ink); border-radius: 3px; padding: 0 1px; }
+  mark.current { background: var(--hit-active); box-shadow: 0 0 0 2px var(--hit-active); }
+  .empty { column-span: all; text-align: center; color: var(--ink-soft); padding: 60px 20px; font-size: 14px; }
+  .empty b { color: var(--ink); display: block; font-size: 16px; margin-bottom: 4px; }
+
+  .fab {
+    position: fixed; right: 18px; bottom: calc(20px + env(safe-area-inset-bottom));
+    width: 58px; height: 58px; border-radius: 20px; border: none;
+    background: #0c0b0a; color: #ffe14d; font-size: 32px; font-weight: 400;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35); cursor: pointer;
+    display: grid; place-items: center; z-index: 30;
+  }
+  .fab:active { transform: scale(.93); }
+
+  /* editor */
+  .sheet-back { position: fixed; inset: 0; background: rgba(31,28,23,.32); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40; }
+  .sheet-back.open { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; max-height: 94dvh;
+    background: var(--surface); border-radius: 22px 22px 0 0;
+    box-shadow: 0 -8px 40px rgba(31,28,23,.2);
+    transform: translateY(100%); transition: transform .26s cubic-bezier(.32,.72,0,1);
+    z-index: 41; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sheet.open { transform: translateY(0); }
+  .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 9px auto 4px; flex: 0 0 auto; }
+  .sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px 6px; flex: 0 0 auto; }
+  .sheet-head button { border: none; background: transparent; font: inherit; font-size: 16px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 8px 8px; }
+  .dots { font-size: 22px !important; color: var(--ink-soft) !important; line-height: 1; }
+
+  /* popover menu for ⋯ */
+  .menu {
+    position: absolute; top: 44px; left: 10px; z-index: 50;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: 0 10px 30px rgba(31,28,23,.18);
+    padding: 10px; width: 232px; display: none;
+  }
+  .menu.open { display: block; }
+  .menu h4 { margin: 2px 4px 8px; font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(31,28,23,.12); cursor: pointer; position: relative; }
+  .swatch.sel { border-color: var(--ink); }
+  .swatch.sel::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: #fff; font-weight: 800; text-shadow: 0 0 2px rgba(0,0,0,.4); }
+  .menu .danger { width: 100%; text-align: left; border: none; background: transparent; font: inherit; font-size: 14px; color: #c0392b; padding: 8px 6px; cursor: pointer; border-top: 1px solid var(--line); }
+
+  .sheet-body { overflow-y: auto; padding: 0 12px 18px; flex: 1 1 auto; }
+  #e-title {
+    width: calc(100% + 24px); margin: 0 -12px; box-sizing: border-box;
+    border: none; outline: none;
+    font: inherit; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);
+    position: sticky; top: 0; z-index: 5;
+    background: var(--surface);
+    padding: 10px 18px 10px; 
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* editable rows */
+  .erows { position: relative; }
+  .erow { display: grid; grid-template-columns: 20px 1fr 36px 1fr; align-items: stretch; gap: 0; position: relative; }
+  .erow.head { margin-top: 12px; }
+  .erow.head:first-child { margin-top: 0; }
+  .erow.head .ecell { font-weight: 700; }
+  /* central rule per row (aligned to the speak column) */
+  .erow::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(20px + (100% - 20px - 36px)/2 + (36px/2) - .75px); width: 1.5px; background: var(--rule); opacity: .85; }
+  .sectoggle {
+    grid-column: 1; align-self: start; margin-top: 6px; justify-self: center;
+    width: 18px; height: 18px; border-radius: 5px; border: none;
+    background: transparent; color: var(--ink-soft); cursor: pointer;
+    font-size: 13px; line-height: 1; display: grid; place-items: center; opacity: .5;
+  }
+  .sectoggle:active { transform: scale(.9); }
+  .erow.head .sectoggle { color: var(--accent); opacity: 1; }
+  .ecell {
+    border: none; outline: none; background: transparent; font: inherit; font-size: 16px;
+    line-height: 1.35; padding: 4px 10px; resize: none; color: var(--ink);
+    overflow: hidden; min-height: 30px; white-space: nowrap;
+  }
+  .ecell.l { text-align: right; grid-column: 2; }
+  .ecell.r { text-align: left; grid-column: 4; }
+  .speak {
+    grid-column: 3; align-self: center; justify-self: center;
+    width: 26px; height: 26px; border-radius: 50%; border: none;
+    background: var(--accent-soft); color: var(--accent); cursor: pointer;
+    display: grid; place-items: center; font-size: 12px;
+    position: relative; z-index: 2;
+  }
+  .speak:active { transform: scale(.9); }
+  .speak.playing { background: var(--accent); color: #fff; }
+  .erow.blank .speak { visibility: hidden; }
+  .erow.blank .ecell::placeholder { color: transparent; }
+  .erows-spacer { min-height: 90px; cursor: text; }
+  ::placeholder { color: #c3bbac; }
+
+  @media (min-width: 620px) { main { padding-left: 18px; padding-right: 18px; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="titlerow">
+      <div class="brandwrap"><span class="brand">Нюма <span>Галипов</span></span></div>
+      <div class="histwrap" style="display:flex; align-items:center; gap:6px;">
+        <button class="histbtn" id="undo" title="Annuler" aria-label="Annuler">↶</button>
+        <button class="histbtn" id="redo" title="Rétablir" aria-label="Rétablir">↷</button>
+      </div>
+    </div>
+    <div class="searchwrap">
+      <div class="searchbox">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="search" type="search" placeholder="Rechercher un mot…" autocomplete="off" autocapitalize="off">
+        <button class="clearbtn" id="clear" hidden>×</button>
+      </div>
+      <div class="nav" id="nav" hidden>
+        <span class="tally" id="tally">0/0</span>
+        <button id="prev" aria-label="Précédent">‹</button>
+        <button id="next" aria-label="Suivant">›</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="board"><div class="columns" id="columns"></div></main>
+
+  <button class="fab" id="add" aria-label="Nouvelle note">+</button>
+
+  <div class="sheet-back" id="back"></div>
+  <div class="sheet" id="sheet">
+    <div class="grab"></div>
+    <div class="sheet-head">
+      <button class="dots" id="opts" aria-label="Options">⋯</button>
+      <button id="done">OK</button>
+      <div class="menu" id="menu">
+        <h4>Couleur</h4>
+        <div class="swatches" id="swatches"></div>
+        <button class="danger" id="delete">Supprimer la note</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <input id="e-title" placeholder="Titre">
+      <div class="erows" id="erows"></div>
+      <div class="erows-spacer" id="erows-spacer"></div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const KEY = "numagalipov.v2";
+  const LANG_L = "ru-RU";   // colonne gauche : russe
+  const LANG_R = "fr-FR";   // colonne droite : français
+
+  const store = {
+    load() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } },
+    save(n) { localStorage.setItem(KEY, JSON.stringify(n)); }
+  };
+
+  // ---- history (undo/redo on NOTES, not on the file) ----
+  let past = [], future = [];
+  function snapshot() { return JSON.parse(JSON.stringify(notes)); }
+  // call BEFORE mutating notes
+  function pushHistory() { past.push(snapshot()); if (past.length > 60) past.shift(); future = []; updateHistBtns(); }
+  function updateHistBtns() {
+    const u = document.getElementById("undo"), r = document.getElementById("redo");
+    if (u) u.disabled = past.length === 0;
+    if (r) r.disabled = future.length === 0;
+  }
+  function undo() {
+    if (!past.length) return;
+    future.push(snapshot());
+    notes = past.pop();
+    store.save(notes); updateHistBtns(); render();
+  }
+  function redo() {
+    if (!future.length) return;
+    past.push(snapshot());
+    notes = future.pop();
+    store.save(notes); updateHistBtns(); render();
+  }
+
+  // more primary colours
+  const COLORS = [
+    { k: "default", bg: "#ffffff" },
+    { k: "red",     bg: "#ff6b5e" },
+    { k: "orange",  bg: "#ff9f43" },
+    { k: "yellow",  bg: "#ffd633" },
+    { k: "green",   bg: "#4ad66d" },
+    { k: "teal",    bg: "#2bd1c4" },
+    { k: "blue",    bg: "#4d96ff" },
+    { k: "purple",  bg: "#9b6bff" },
+    { k: "pink",    bg: "#ff6bcb" },
+    { k: "gray",    bg: "#c4ccd4" },
+  ];
+  function colorBg(k) { const c = COLORS.find(x => x.k === k); return c ? c.bg : "#ffffff"; }
+
+  function id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // data model: note.rows = [{l, r}, ...]
+  function migrate(list) {
+    const out = list.map(n => {
+      let rows = n.rows;
+      if (!rows) {
+        rows = [];
+        (n.body || "").split("\n").forEach(line => {
+          let l = line, r = "";
+          if (line.includes("\t")) { const p = line.split("\t"); l = p[0]; r = p.slice(1).join(" "); }
+          else if (line.includes(" -- ")) { const p = line.split(" -- "); l = p[0]; r = p.slice(1).join(" "); }
+          rows.push({ l, r });
+        });
+        if (!rows.length) rows.push({ l: "", r: "" });
+      }
+      return { id: n.id, title: n.title || "", color: n.color || "default", rows,
+               col: (typeof n.col === "number" ? n.col : null),
+               ord: (typeof n.ord === "number" ? n.ord : null),
+               t: n.t || Date.now() };
+    });
+    // assign col/ord for any note missing them: distribute in current order across 2 cols
+    let needAssign = out.some(n => n.col === null);
+    if (needAssign) {
+      const counts = [0, 0];
+      out.forEach((n, i) => {
+        if (n.col === null) { const c = i % 2; n.col = c; n.ord = counts[c]++; }
+      });
+    }
+    return out;
+  }
+
+  const seed = [
+    { id: id(), title: "Salutations", color: "default", col: 0, ord: 0, rows: [
+      { l: "привет", r: "salut" },
+      { l: "здравствуйте", r: "bonjour (poli)" },
+      { l: "пока", r: "à bientôt" },
+      { l: "спасибо", r: "merci" },
+    ], t: Date.now() },
+    { id: id(), title: "Vocabulaire russe", color: "yellow", col: 1, ord: 0, rows: [
+      { l: "быть (inf)", r: "être", head: true },
+      { l: "книга", r: "livre" },
+      { l: "завтра", r: "demain" },
+      { l: "всегда", r: "toujours" },
+    ], t: Date.now()-1 },
+    { id: id(), title: "À faire", color: "blue", col: 1, ord: 1, rows: [
+      { l: "réviser", r: "les verbes" },
+      { l: "synchro Drive", r: "plus tard" },
+    ], t: Date.now()-2 },
+  ];
+
+  let notes = store.load() ? migrate(store.load()) : seed;
+  store.save(notes);
+
+  const $ = s => document.querySelector(s);
+  const columns = $("#columns");
+  const search = $("#search");
+  const clearBtn = $("#clear");
+  const nav = $("#nav");
+  const tally = $("#tally");
+  const sheet = $("#sheet");
+  const back = $("#back");
+  const eTitle = $("#e-title");
+  const erows = $("#erows");
+  const swatches = $("#swatches");
+  const menu = $("#menu");
+
+  let query = "";
+  let hits = [];
+  let hitIndex = -1;
+  let editingId = null;
+  let editColor = "default";
+  let draft = [];   // working rows in the editor
+
+  function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+  function reEsc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function mark(text) {
+    const safe = esc(text);
+    if (!query) return safe;
+    return safe.replace(new RegExp("(" + reEsc(query) + ")", "gi"), "<mark>$1</mark>");
+  }
+  function noteText(n) { return n.title + "\n" + n.rows.map(r => r.l + " " + r.r).join("\n"); }
+  function matches(n) { return !query || noteText(n).toLowerCase().includes(query.toLowerCase()); }
+
+  // ---- pointer-based long-press drag to reorder notes ----
+  let dragState = null;
+  function attachDrag(card, noteId) {
+    const handle = card.querySelector(".draghandle");
+    let startX, startY, longPressTimer, dragging = false, ghost = null;
+
+    function pointerDown(e) {
+      if (e.button === 1 || e.button === 2) return;
+      const pt = e.touches ? e.touches[0] : e;
+      startX = pt.clientX; startY = pt.clientY;
+      // long-press on card body, or immediate on handle
+      const onHandle = e.target.closest(".draghandle");
+      const delay = onHandle ? 0 : 280;
+      longPressTimer = setTimeout(() => beginDrag(pt), delay);
+      document.addEventListener("pointermove", checkMove);
+      document.addEventListener("pointerup", pointerUp, { once: true });
+      if (onHandle) e.preventDefault();
+    }
+    function checkMove(e) {
+      if (dragging) { onDrag(e); return; }
+      // if user moved a lot before long-press fired, cancel (it's a scroll)
+      if (Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8) {
+        clearTimeout(longPressTimer);
+        document.removeEventListener("pointermove", checkMove);
+      }
+    }
+    function beginDrag(pt) {
+      dragging = true;
+      card.dataset.suppressClick = "1";
+      card.classList.add("dragging");
+      if (navigator.vibrate) navigator.vibrate(8);
+      ghost = card.cloneNode(true);
+      ghost.classList.add("drag-ghost");
+      ghost.style.position = "fixed";
+      ghost.style.pointerEvents = "none";
+      ghost.style.width = card.offsetWidth + "px";
+      ghost.style.left = card.getBoundingClientRect().left + "px";
+      ghost.style.top = card.getBoundingClientRect().top + "px";
+      ghost.style.zIndex = 999;
+      ghost.style.opacity = ".95";
+      ghost.style.transform = "scale(1.03)";
+      ghost.style.boxShadow = "0 12px 30px rgba(0,0,0,.25)";
+      ghost.classList.remove("dragging");
+      document.body.appendChild(ghost);
+      dragState = { id: noteId, offY: pt.clientY - card.getBoundingClientRect().top, offX: pt.clientX - card.getBoundingClientRect().left };
+    }
+    function onDrag(e) {
+      if (!ghost) return;
+      ghost.style.left = (e.clientX - dragState.offX) + "px";
+      ghost.style.top = (e.clientY - dragState.offY) + "px";
+      ghost.style.display = "none";
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      ghost.style.display = "";
+      document.querySelectorAll(".card.dragover-top, .card.dragover-bot").forEach(c => c.classList.remove("dragover-top","dragover-bot"));
+      document.querySelectorAll(".col.coltarget").forEach(c => c.classList.remove("coltarget"));
+      const over = el && el.closest(".card");
+      if (over && over !== card) {
+        const rect = over.getBoundingClientRect();
+        over.classList.add(e.clientY > rect.top + rect.height/2 ? "dragover-bot" : "dragover-top");
+      } else {
+        const col = el && el.closest(".col");
+        if (col) col.classList.add("coltarget");
+      }
+    }
+    function pointerUp(e) {
+      clearTimeout(longPressTimer);
+      document.removeEventListener("pointermove", checkMove);
+      if (!dragging) { return; }
+      dragging = false;
+      ghost && ghost.style && (ghost.style.display = "none");
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const over = el && el.closest(".card");
+      const col = el && el.closest(".col");
+      if (ghost) { ghost.remove(); ghost = null; }
+      document.querySelectorAll(".drag-ghost").forEach(g => g.remove());
+      card.classList.remove("dragging");
+      document.querySelectorAll(".card.dragover-top, .card.dragover-bot").forEach(c => c.classList.remove("dragover-top","dragover-bot"));
+      document.querySelectorAll(".col.coltarget").forEach(c => c.classList.remove("coltarget"));
+      if (over && over.dataset.id && over.dataset.id !== noteId) {
+        dropOnCard(noteId, over.dataset.id, e.clientY);
+      } else if (col && col.dataset.col != null) {
+        dropInColumn(noteId, parseInt(col.dataset.col, 10));
+      }
+      setTimeout(() => { delete card.dataset.suppressClick; }, 50);
+    }
+    handle.addEventListener("pointerdown", pointerDown);
+    card.addEventListener("pointerdown", pointerDown);
+  }
+
+  // drop onto a target card (above/below) OR onto an empty column drop-zone
+  function dropOnCard(fromId, toId, clientY) {
+    const moved = notes.find(n => n.id === fromId);
+    const target = notes.find(n => n.id === toId);
+    if (!moved || !target || fromId === toId) return false;
+    pushHistory();
+    const destCol = target.col;
+    const rect = columns.querySelector(`.card[data-id="${toId}"]`)?.getBoundingClientRect();
+    const after = rect ? (clientY > rect.top + rect.height / 2) : false;
+    moveInto(moved, destCol, target.ord + (after ? 1 : 0));
+    commitOrder();
+    return true;
+  }
+  function dropInColumn(fromId, destCol) {
+    const moved = notes.find(n => n.id === fromId);
+    if (!moved) return false;
+    pushHistory();
+    const count = notes.filter(n => n.col === destCol && n.id !== fromId).length;
+    moveInto(moved, destCol, count); // append at end
+    commitOrder();
+    return true;
+  }
+  function moveInto(moved, destCol, destIndex) {
+    // pull moved out of its column ordering, then insert at destIndex in destCol
+    const fromCol = moved.col;
+    // shift down items in source col after moved (handled by normalize later)
+    moved.col = destCol;
+    // make room: bump ord of items at/after destIndex in destCol
+    notes.filter(n => n.col === destCol && n !== moved && n.ord >= destIndex)
+         .forEach(n => n.ord += 1);
+    moved.ord = destIndex;
+  }
+  function commitOrder() { normalizeOrder(); store.save(notes); render(); }
+
+  // shrink a single-line element's font-size until its content fits its width (no wrap)
+  function fitText(el, maxPx, minPx) {
+    if (!el) return;
+    el.style.fontSize = maxPx + "px";
+    if (el.scrollWidth <= el.clientWidth + 1) return; // already fits
+    // compute the ratio needed and apply directly, clamped to minPx
+    const ratio = el.clientWidth / el.scrollWidth;
+    let size = Math.max(minPx, Math.floor(maxPx * ratio * 100) / 100);
+    el.style.fontSize = size + "px";
+    // fine-tune a couple of steps in case of rounding
+    let guard = 0;
+    while (el.scrollWidth > el.clientWidth + 1 && size > minPx && guard < 12) {
+      size = Math.max(minPx, size - 0.5); guard++;
+      el.style.fontSize = size + "px";
+    }
+  }
+  function fitCellsIn(root, maxPx, minPx) {
+    root.querySelectorAll(".cell").forEach(c => {
+      if (c.textContent.trim()) fitText(c, maxPx, minPx);
+    });
+  }
+
+  function buildCard(note) {
+    const card = document.createElement("article");
+    card.className = "card";
+    card.style.background = colorBg(note.color);
+    if (note.color !== "default") { card.style.borderColor = "transparent"; card.classList.add("coloured"); }
+    if (query) { if (matches(note)) card.classList.add("match"); else card.classList.add("dim"); }
+    card.dataset.id = note.id;
+
+    let html = `<span class="draghandle" aria-label="Déplacer">⠿</span>`;
+    if (note.title) html += `<h3 class="card-title">${mark(note.title)}</h3>`;
+    html += `<div class="card-body${query ? "" : " clamp"}"><div class="grid">`;
+    note.rows.forEach(r => {
+      if (r.l === "" && r.r === "" && !r.head) {
+        html += `<div class="row spacer"></div>`;
+        return;
+      }
+      const cls = "row" + (r.head ? " head" : "");
+      html += `<div class="${cls}"><div class="cell l">${mark(r.l)}</div><div class="cell r">${mark(r.r)}</div></div>`;
+    });
+    html += `</div></div>`;
+    card.innerHTML = html;
+    card.addEventListener("click", e => { if (!card.dataset.suppressClick) openEditor(note.id); });
+    attachDrag(card, note.id);
+    return card;
+  }
+
+  const NCOLS = 2;
+
+  function normalizeOrder() {
+    // ensure each column has clean 0..k-1 ord values, in current ord order
+    for (let c = 0; c < NCOLS; c++) {
+      const inCol = notes.filter(n => n.col === c).sort((a,b) => a.ord - b.ord);
+      inCol.forEach((n, i) => n.ord = i);
+    }
+  }
+
+  function render() {
+    document.querySelectorAll(".drag-ghost").forEach(g => g.remove());
+    columns.innerHTML = "";
+    normalizeOrder();
+    const cols = [];
+    for (let i = 0; i < NCOLS; i++) { const c = document.createElement("div"); c.className = "col"; c.dataset.col = i; columns.appendChild(c); cols.push(c); }
+    let anyMatch = false;
+    for (let c = 0; c < NCOLS; c++) {
+      const inCol = notes.filter(n => n.col === c).sort((a,b) => a.ord - b.ord);
+      inCol.forEach(note => {
+        if (query && matches(note)) anyMatch = true;
+        cols[c].appendChild(buildCard(note));
+      });
+      // trailing drop zone so you can drop at the very bottom of a column
+      const drop = document.createElement("div");
+      drop.className = "coldrop"; drop.dataset.col = c;
+      cols[c].appendChild(drop);
+    }
+
+    if (query && !anyMatch) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.innerHTML = `<b>Aucun résultat</b>Aucune note ne contient « ${esc(query)} ».`;
+      e.style.flex = "1";
+      columns.appendChild(e);
+    }
+    rebuildHits();
+    // auto-shrink overflowing cells on cards (must be in DOM to measure)
+    requestAnimationFrame(() => fitCellsIn(columns, 13.5, 4));
+  }
+
+  function rebuildHits() {
+    hits = Array.from(columns.querySelectorAll("mark"));
+    if (hits.length) { hitIndex = Math.min(hitIndex < 0 ? 0 : hitIndex, hits.length - 1); setCurrent(hitIndex, false); nav.hidden = false; }
+    else { hitIndex = -1; nav.hidden = !query; }
+    updateTally();
+  }
+  function updateTally() { tally.textContent = (hits.length ? hitIndex + 1 : 0) + "/" + hits.length; }
+  function setCurrent(i, scroll) {
+    if (!hits.length) return;
+    hits.forEach(m => m.classList.remove("current"));
+    hitIndex = (i + hits.length) % hits.length;
+    const m = hits[hitIndex];
+    m.classList.add("current");
+    updateTally();
+    if (scroll) m.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  function step(dir) {
+    if (editorOpen()) {
+      collectEditorMatches();
+      if (editorMatches.length) gotoEditorMatch((editorMatchIdx < 0 ? 0 : editorMatchIdx) + dir, true);
+      return;
+    }
+    if (hits.length) setCurrent(hitIndex + dir, true);
+  }
+
+  let debounce;
+  search.addEventListener("input", () => {
+    clearBtn.hidden = !search.value;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => { query = search.value.trim(); hitIndex = 0; render(); if (hits.length) setCurrent(0, true); }, 120);
+  });
+  search.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); step(e.shiftKey ? -1 : 1); } });
+  clearBtn.addEventListener("click", () => { search.value = ""; query = ""; clearBtn.hidden = true; render(); search.focus(); });
+  $("#next").addEventListener("click", () => step(1));
+  $("#prev").addEventListener("click", () => step(-1));
+
+  // ---- colours in popover ----
+  COLORS.forEach(c => {
+    const s = document.createElement("div");
+    s.className = "swatch"; s.style.background = c.bg; s.dataset.k = c.k;
+    if (c.k === "default") s.style.borderColor = "var(--line)";
+    s.addEventListener("click", () => { editColor = c.k; paintSwatches(); applyEditorColor(); });
+    swatches.appendChild(s);
+  });
+  function paintSwatches() { swatches.querySelectorAll(".swatch").forEach(s => s.classList.toggle("sel", s.dataset.k === editColor)); }
+  function applyEditorColor() {
+    const bg = colorBg(editColor);
+    sheet.style.background = bg;
+    const t = document.getElementById("e-title");
+    if (t) { t.style.background = bg; t.style.borderBottomColor = (editColor === "default" ? "var(--line)" : "rgba(0,0,0,.12)"); }
+  }
+
+  $("#opts").addEventListener("click", e => { e.stopPropagation(); menu.classList.toggle("open"); });
+  document.addEventListener("click", e => { if (!menu.contains(e.target) && e.target.id !== "opts") menu.classList.remove("open"); });
+
+  // ---- speech ----
+  let voices = [];
+  function loadVoices() { voices = window.speechSynthesis ? speechSynthesis.getVoices() : []; }
+  if (window.speechSynthesis) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+  function pickVoice(lang) {
+    if (!voices.length) loadVoices();
+    return voices.find(v => v.lang === lang) || voices.find(v => v.lang.slice(0,2) === lang.slice(0,2)) || null;
+  }
+  // strip punctuation that gets spoken aloud (slash, parens, dashes) -> replace with a pause
+  function cleanForSpeech(text) {
+    return text
+      // grammatical markers like (inf), (n.masc.), (n.fem.), (n.neut.) -> removed entirely (not spoken)
+      .replace(/\(\s*(inf\.?|n\.?\s*masc\.?|n\.?\s*fem\.?|n\.?\s*neut\.?)\s*\)/gi, " ")
+      .replace(/[\/()\[\]{}]/g, " , ")        // remaining slashes and brackets -> pause
+      .replace(/\s[-–—]+\s/g, " , ")           // dash between spaces (separator) -> pause
+      .replace(/(^|\s)[-–—]+(\s|$)/g, " , ")   // standalone dash -> pause
+      .replace(/[–—]/g, " , ")                  // long dashes anywhere -> pause (keep simple hyphen in words)
+      .replace(/\s*,\s*(,\s*)+/g, " , ")       // collapse repeated pauses
+      .replace(/\s{2,}/g, " ")                 // collapse spaces
+      .replace(/^[\s,]+|[\s,]+$/g, "")          // trim leading/trailing pauses
+      .trim();
+  }
+
+  function speakSeq(items, btn) {
+    if (!window.speechSynthesis) { alert("La lecture vocale n'est pas disponible sur ce navigateur."); return; }
+    speechSynthesis.cancel();
+    btn && btn.classList.add("playing");
+    let i = 0;
+    (function next() {
+      if (i >= items.length) { btn && btn.classList.remove("playing"); return; }
+      const { text, lang } = items[i++];
+      const spoken = cleanForSpeech(text || "");
+      if (!spoken) { next(); return; }
+      const u = new SpeechSynthesisUtterance(spoken);
+      u.lang = lang; const v = pickVoice(lang); if (v) u.voice = v;
+      u.onend = next; u.onerror = next;
+      speechSynthesis.speak(u);
+    })();
+  }
+
+  // ---- editor (editable two columns) ----
+  function autosize(t) { t.style.height = "auto"; t.style.height = Math.max(30, t.scrollHeight) + "px"; }
+  // shrink a textarea's font so its (single-line) content fits without horizontal scroll
+  function fitCell(t, maxPx, minPx) {
+    if (!t) return;
+    t.style.fontSize = maxPx + "px";
+    if (t.scrollWidth <= t.clientWidth + 1) return;
+    const ratio = t.clientWidth / t.scrollWidth;
+    let size = Math.max(minPx, Math.floor(maxPx * ratio * 100) / 100);
+    t.style.fontSize = size + "px";
+    let guard = 0;
+    while (t.scrollWidth > t.clientWidth + 1 && size > minPx && guard < 12) {
+      size = Math.max(minPx, size - 0.5); guard++;
+      t.style.fontSize = size + "px";
+    }
+  }
+
+  function buildRow(row, idx) {
+    const wrap = document.createElement("div");
+    wrap.className = "erow" + (row.head ? " head" : "");
+    // section toggle at the far left
+    const sec = document.createElement("button");
+    sec.className = "sectoggle"; sec.title = "Début de section"; sec.setAttribute("aria-label","Début de section");
+    sec.innerHTML = row.head ? "•" : "·";
+    const l = document.createElement("textarea");
+    l.className = "ecell l"; l.value = row.l; l.placeholder = "русский"; l.rows = 1; l.lang = "ru";
+    const speak = document.createElement("button");
+    speak.className = "speak"; speak.innerHTML = "▶"; speak.title = "Lire";
+    const r = document.createElement("textarea");
+    r.className = "ecell r"; r.value = row.r; r.placeholder = "français"; r.rows = 1; r.lang = "fr";
+
+    function refreshBlank() {
+      // a row with no content and not a header is "blank": hide placeholders + speak
+      const blank = !l.value.trim() && !r.value.trim() && !draft[idx].head;
+      wrap.classList.toggle("blank", blank);
+    }
+
+    sec.addEventListener("click", () => {
+      draft[idx].head = !draft[idx].head;
+      wrap.classList.toggle("head", draft[idx].head);
+      sec.innerHTML = draft[idx].head ? "•" : "·";
+      refreshBlank();
+    });
+
+    function onPaste(cell, side, e) {
+      const text = (e.clipboardData || window.clipboardData).getData("text");
+      if (!text || text.indexOf("\n") < 0) return; // single line: let default happen
+      e.preventDefault();
+      const parsed = parsePasted(text);
+      // replace current row with the parsed rows (merge into current empty cell position)
+      const cur = draft[idx];
+      const curEmpty = !cur.l.trim() && !cur.r.trim();
+      const insert = parsed.length ? parsed : [{ l: "", r: "", head: false }];
+      const startAt = curEmpty ? idx : idx + 1;
+      if (curEmpty) draft.splice(idx, 1, ...insert);
+      else draft.splice(idx + 1, 0, ...insert);
+      ensureTrailingBlank();
+      renderDraft(Math.min(startAt + insert.length - 1, draft.length - 1));
+    }
+    // typing a grammatical marker auto-marks the line as a section header (marker text is kept)
+    const HEAD_RE = /\(\s*(inf\.?|n\.?\s*masc\.?|n\.?\s*fem\.?|n\.?\s*neut\.?)\s*\)/i;
+    function detectInf(cell, sideKey) {
+      if (HEAD_RE.test(cell.value)) {
+        if (!draft[idx].head) {
+          draft[idx].head = true;
+          wrap.classList.add("head");
+          sec.innerHTML = "•";
+          syncHeights(wrap);
+        }
+        return true;
+      }
+      return false;
+    }
+
+    l.addEventListener("paste", e => onPaste(l, "l", e));
+    r.addEventListener("paste", e => onPaste(r, "r", e));
+
+    l.addEventListener("input", () => { draft[idx].l = l.value; detectInf(l, "l"); autosize(l); fitCell(l, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
+    r.addEventListener("input", () => { draft[idx].r = r.value; detectInf(r, "r"); autosize(r); fitCell(r, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
+    [l, r].forEach(t => t.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addRow(idx + 1); }
+    }));
+    speak.addEventListener("click", () => {
+      speakSeq([{ text: draft[idx].l, lang: LANG_L }, { text: draft[idx].r, lang: LANG_R }], speak);
+    });
+
+    wrap.appendChild(sec); wrap.appendChild(l); wrap.appendChild(speak); wrap.appendChild(r);
+    requestAnimationFrame(() => { autosize(l); autosize(r); fitCell(l, 16, 9); fitCell(r, 16, 9); syncHeights(wrap); refreshBlank(); });
+    return wrap;
+  }
+
+  // parse a pasted block into rows; detect section headers (a line followed by a lone "-")
+  function parsePasted(text) {
+    const lines = text.replace(/\r/g, "").split("\n");
+    const rows = [];
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i];
+      const trimmed = raw.trim();
+      if (trimmed === "") continue;
+      // lone separator: skip (it only marks the line above as header)
+      if (trimmed === "-" || trimmed === "—" || trimmed === "–") continue;
+      // is the NEXT non-empty line a lone separator? then this line is a header
+      let isHead = false;
+      for (let j = i + 1; j < lines.length; j++) {
+        const t2 = lines[j].trim();
+        if (t2 === "") continue;
+        isHead = (t2 === "-" || t2 === "—" || t2 === "–");
+        break;
+      }
+      // split l/r on tab or " -- "
+      let l = trimmed, r = "";
+      if (raw.includes("\t")) { const p = raw.split("\t"); l = p[0].trim(); r = p.slice(1).join(" ").trim(); }
+      else if (raw.includes(" -- ")) { const p = raw.split(" -- "); l = p[0].trim(); r = p.slice(1).join(" ").trim(); }
+      // grammatical marker anywhere -> header (keep the marker text)
+      const HEAD = /\(\s*(inf\.?|n\.?\s*masc\.?|n\.?\s*fem\.?|n\.?\s*neut\.?)\s*\)/i;
+      if (HEAD.test(l) || HEAD.test(r)) isHead = true;
+      rows.push({ l, r, head: isHead });
+    }
+    return rows;
+  }
+  function syncHeights(wrap) {
+    const cells = wrap.querySelectorAll(".ecell");
+    let h = 30; cells.forEach(c => h = Math.max(h, c.scrollHeight));
+    cells.forEach(c => c.style.height = h + "px");
+  }
+
+  function renderDraft(focusIdx) {
+    erows.innerHTML = "";
+    draft.forEach((row, i) => erows.appendChild(buildRow(row, i)));
+    if (typeof focusIdx === "number") {
+      const cell = erows.children[focusIdx]?.querySelector(".ecell.l");
+      cell && cell.focus();
+    }
+  }
+  function addRow(at) {
+    const idx = (typeof at === "number") ? at : draft.length;
+    draft.splice(idx, 0, { l: "", r: "", head: false });
+    renderDraft(idx);
+  }
+  function ensureTrailingBlank() {
+    const last = draft[draft.length - 1];
+    if (!last || last.l.trim() || last.r.trim()) draft.push({ l: "", r: "", head: false });
+  }
+  function maybeGrow(idx) {
+    // only when editing the current last row and it just gained content
+    if (idx === draft.length - 1 && (draft[idx].l.trim() || draft[idx].r.trim())) {
+      draft.push({ l: "", r: "", head: false });
+      erows.appendChild(buildRow(draft[draft.length - 1], draft.length - 1));
+    }
+  }
+
+  function openEditor(noteId) {
+    const note = noteId ? notes.find(n => n.id === noteId) : null;
+    editingId = note ? note.id : null;
+    editColor = note ? (note.color || "default") : "default";
+    eTitle.value = note ? note.title : "";
+    draft = note ? note.rows.map(r => ({ l: r.l, r: r.r, head: !!r.head })) : [];
+    ensureTrailingBlank();
+    paintSwatches(); applyEditorColor();
+    menu.classList.remove("open");
+    $("#delete").style.display = note ? "block" : "none";
+    back.classList.add("open"); sheet.classList.add("open");
+    renderDraft();
+    // search-in-edit: focus + scroll to the matching cell
+    if (note && query) requestAnimationFrame(() => focusMatchInEditor());
+    else if (!note) requestAnimationFrame(() => erows.querySelector(".ecell.l")?.focus());
+  }
+
+  // collect all occurrences of the query in the open editor (in row/side order)
+  let editorMatches = [];
+  let editorMatchIdx = -1;
+  function collectEditorMatches() {
+    editorMatches = [];
+    if (!query) return;
+    const q = query.toLowerCase();
+    for (let i = 0; i < draft.length; i++) {
+      for (const side of ["l", "r"]) {
+        const val = (draft[i][side] || "").toLowerCase();
+        let from = 0, pos;
+        while ((pos = val.indexOf(q, from)) >= 0) {
+          editorMatches.push({ row: i, side, pos });
+          from = pos + Math.max(1, q.length);
+        }
+      }
+    }
+  }
+  function gotoEditorMatch(idx, scroll) {
+    if (!editorMatches.length) return;
+    editorMatchIdx = (idx + editorMatches.length) % editorMatches.length;
+    const m = editorMatches[editorMatchIdx];
+    const cell = erows.children[m.row]?.querySelector(".ecell." + m.side);
+    if (cell) {
+      cell.focus();
+      cell.setSelectionRange(m.pos, m.pos + query.length);
+      if (scroll) cell.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    // reflect position in the counter
+    if (tally) tally.textContent = (editorMatchIdx + 1) + "/" + editorMatches.length;
+  }
+  function focusMatchInEditor() {
+    collectEditorMatches();
+    if (editorMatches.length) { nav.hidden = false; gotoEditorMatch(0, true); }
+  }
+  function editorOpen() { return sheet.classList.contains("open"); }
+
+  function closeEditor(saveIt) {
+    if (saveIt) {
+      const title = eTitle.value.trim();
+      let rows = draft.map(r => ({ l: r.l.trim(), r: r.r.trim(), head: !!r.head }));
+      // drop only trailing empty rows (keep interior blanks as spacing)
+      while (rows.length && !rows[rows.length-1].l && !rows[rows.length-1].r && !rows[rows.length-1].head) rows.pop();
+      const hasContent = title || rows.length;
+      // detect whether anything actually changed vs current state
+      let changed = false;
+      if (editingId) {
+        const n = notes.find(x => x.id === editingId);
+        const before = JSON.stringify({ t: n.title, r: n.rows, c: n.color });
+        const after = JSON.stringify({ t: title, r: (rows.length ? rows : [{ l:"", r:"" }]), c: editColor });
+        changed = (before !== after) || !hasContent;
+      } else {
+        changed = !!hasContent;
+      }
+      if (changed) pushHistory();
+      if (editingId) {
+        const n = notes.find(x => x.id === editingId);
+        if (!hasContent) notes = notes.filter(x => x.id !== editingId);
+        else { n.title = title; n.rows = rows.length ? rows : [{ l:"", r:"" }]; n.color = editColor; n.t = Date.now(); }
+      } else if (hasContent) {
+        const c0 = notes.filter(n => n.col === 0).length;
+        const c1 = notes.filter(n => n.col === 1).length;
+        const destCol = c0 <= c1 ? 0 : 1;
+        notes.filter(n => n.col === destCol).forEach(n => n.ord += 1);
+        notes.push({ id: id(), title, rows: rows.length ? rows : [{ l:"", r:"" }], color: editColor, col: destCol, ord: 0, t: Date.now() });
+      }
+      store.save(notes);
+    }
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    back.classList.remove("open"); sheet.classList.remove("open");
+    sheet.style.background = "var(--surface)";
+    const _t = document.getElementById("e-title"); if (_t) { _t.style.background = "var(--surface)"; _t.style.borderBottomColor = "var(--line)"; }
+    editingId = null; menu.classList.remove("open");
+    editorMatches = []; editorMatchIdx = -1;
+    render();
+  }
+
+  document.getElementById("erows-spacer").addEventListener("click", () => {
+    ensureTrailingBlank();
+    const cells = erows.querySelectorAll(".ecell.l");
+    const last = cells[cells.length - 1];
+    if (last) last.focus();
+  });
+  $("#add").addEventListener("click", () => openEditor(null));
+  $("#done").addEventListener("click", () => closeEditor(true));
+  back.addEventListener("click", () => closeEditor(true));
+  $("#delete").addEventListener("click", () => {
+    if (editingId) { pushHistory(); notes = notes.filter(x => x.id !== editingId); }
+    store.save(notes); closeEditor(false);
+  });
+  eTitle.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); erows.querySelector(".ecell.l")?.focus(); } });
+
+  let resizeT;
+  window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(render, 200); });
+  document.getElementById("undo").addEventListener("click", undo);
+  document.getElementById("redo").addEventListener("click", redo);
+  updateHistBtns();
+
+  render();
+})();
+</script>
+</body>
+</html>
