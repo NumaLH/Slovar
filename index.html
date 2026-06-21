@@ -190,7 +190,7 @@
   .sheet-back { position: fixed; left: 0; right: 0; bottom: 0; top: var(--sheet-top, var(--header-h, 0px)); background: rgba(31,28,23,.32); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40; }
   .sheet-back.open { opacity: 1; pointer-events: auto; }
   .sheet {
-    position: fixed; left: 0; right: 0; bottom: 0;
+    position: fixed; left: 0; right: 0; bottom: var(--kb-bottom, 0px);
     top: var(--sheet-top, var(--header-h, 0px));
     background: var(--surface); border-radius: 22px 22px 0 0;
     box-shadow: 0 -8px 40px rgba(31,28,23,.2);
@@ -331,7 +331,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.5";
+  const VERSION = "v1.6";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1291,11 +1291,25 @@
     if (cell) {
       cell.focus();
       cell.setSelectionRange(m.pos, m.pos + query.length);
-      if (scroll) cell.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (scroll) scrollMatchIntoView(cell);
     }
     const label = (editorMatchIdx + 1) + "/" + editorMatches.length;
     if (tally) tally.textContent = label;
     const et = document.getElementById("edtally"); if (et) et.textContent = label;
+  }
+  // scroll the sheet-body so the cell sits in the middle of the area visible above the keyboard
+  function scrollMatchIntoView(cell) {
+    const body = document.querySelector(".sheet-body");
+    if (!body) { cell.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    const bodyRect = body.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    // visible bottom of the sheet body = min(its own bottom, keyboard top)
+    const vv = window.visualViewport;
+    const kbTop = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
+    const visibleBottom = Math.min(bodyRect.bottom, kbTop);
+    const visibleMid = (bodyRect.top + visibleBottom) / 2;
+    const delta = (cellRect.top + cellRect.height / 2) - visibleMid;
+    body.scrollBy({ top: delta, behavior: "smooth" });
   }
   function updateEdNav() {
     const ed = document.getElementById("ednav");
@@ -1388,7 +1402,29 @@
     const offset = (editing && vv) ? Math.max(0, vv.offsetTop) : 0;
     document.documentElement.style.setProperty("--vv-top", offset + "px");
     document.documentElement.style.setProperty("--sheet-top", (offset + (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0)) + "px");
+    // distance from the bottom of the layout viewport up to the bottom of the *visible* area
+    // (i.e. the keyboard + any browser chrome). Lift the sheet by this much.
+    let kb = 0;
+    if (editing && vv) {
+      const layoutH = document.documentElement.clientHeight || window.innerHeight;
+      kb = Math.max(0, Math.round(layoutH - (vv.offsetTop + vv.height)));
+    }
+    document.documentElement.style.setProperty("--kb-bottom", kb + "px");
     syncHeaderHeight();
+    // keep the focused cell visible within the shrunken sheet
+    if (editing) requestAnimationFrame(keepCaretVisible);
+  }
+  function keepCaretVisible() {
+    const el = document.activeElement;
+    if (!el || !el.classList || (!el.classList.contains("ecell") && el.id !== "e-title")) return;
+    const vv = window.visualViewport;
+    if (!vv) { el.scrollIntoView({ block: "center" }); return; }
+    const r = el.getBoundingClientRect();
+    const visTop = vv.offsetTop + (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0) + 50;
+    const visBottom = vv.offsetTop + vv.height - 12;
+    if (r.bottom > visBottom || r.top < visTop) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
   }
   window.__syncVV = syncVisualViewport;
   syncHeaderHeight();
