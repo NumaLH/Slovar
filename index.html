@@ -58,6 +58,9 @@
   .syncpill { font-size: 11px; color: #b8b0a4; background: #1c1a17; border: 1px solid #2a2723; border-radius: 20px; padding: 3px 9px; }
   .histbtn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #2a2723; background: #1c1a17; color: #cfc7ba; font-size: 15px; cursor: pointer; display: grid; place-items: center; }
   .cloudbtn svg { display: block; }
+  .verinfo { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; margin-right: 2px; }
+  .verinfo .ver { font-size: 9px; color: #8a8276; font-weight: 600; }
+  .verinfo .savedat { font-size: 9px; color: #b8b0a4; font-variant-numeric: tabular-nums; }
   .cloudbtn .cloud-check { opacity: 0; }
   #cloud.off { color: #8a8276; background: #1c1a17; border-color: #2a2723; }
   #cloud.syncing { color: #ffd633; background: #2a2410; border-color: #5a4e16; }
@@ -157,6 +160,10 @@
   .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 9px auto 4px; flex: 0 0 auto; }
   .sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px 6px; flex: 0 0 auto; }
   .sheet-head button { border: none; background: transparent; font: inherit; font-size: 16px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 8px 8px; }
+  .ednav { display: flex; align-items: center; gap: 6px; margin-left: auto; margin-right: 6px; }
+  .ednav .edtally { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; min-width: 30px; text-align: center; }
+  .ednav button { background: var(--accent-soft); color: var(--accent); width: 30px; height: 30px; border-radius: 9px; font-size: 17px; font-weight: 700; padding: 0; display: grid; place-items: center; }
+  .ednav button:active { transform: scale(.92); }
   .dots { font-size: 22px !important; color: var(--ink-soft) !important; line-height: 1; }
 
   /* popover menu for ⋯ */
@@ -230,6 +237,10 @@
     <div class="titlerow">
       <div class="brandwrap"><span class="brand">Нюма <span>Галипов</span></span></div>
       <div class="histwrap" style="display:flex; align-items:center; gap:6px;">
+        <div class="verinfo" id="verinfo">
+          <span class="ver" id="ver">v1.0</span>
+          <span class="savedat" id="savedat">—</span>
+        </div>
         <button class="histbtn cloudbtn" id="cloud" title="Synchronisation Drive" aria-label="Synchronisation Drive">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 9.5 4 4 0 0 0 7 17.5"/><path class="cloud-check" d="M9.5 13.5l2 2 3.5-3.5"/><path class="cloud-spin" d="M12 12v0"/></svg>
         </button>
@@ -260,6 +271,11 @@
     <div class="grab"></div>
     <div class="sheet-head">
       <button class="dots" id="opts" aria-label="Options">⋯</button>
+      <div class="ednav" id="ednav" hidden>
+        <span class="edtally" id="edtally">0/0</span>
+        <button id="edprev" aria-label="Précédent">‹</button>
+        <button id="ednext" aria-label="Suivant">›</button>
+      </div>
       <button id="done">OK</button>
       <div class="menu" id="menu">
         <h4>Couleur</h4>
@@ -279,12 +295,28 @@
   "use strict";
 
   const KEY = "numagalipov.v2";
+  const SAVED_KEY = "numagalipov.savedAt";
+  const VERSION = "v1.1";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
+  function fmtDate(ts) {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    const pad = n => String(n).padStart(2, "0");
+    return pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  function setSavedAt(ts) {
+    try { localStorage.setItem(SAVED_KEY, String(ts)); } catch (e) {}
+    const el = document.getElementById("savedat");
+    if (el) el.textContent = fmtDate(ts);
+    const v = document.getElementById("ver");
+    if (v) v.textContent = VERSION;
+  }
+
   const store = {
     load() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } },
-    save(n) { localStorage.setItem(KEY, JSON.stringify(n)); cloud.schedulePush(); }
+    save(n) { localStorage.setItem(KEY, JSON.stringify(n)); setSavedAt(Date.now()); cloud.schedulePush(); }
   };
 
   // ============ Google Drive sync (appDataFolder, newest-per-note wins) ============
@@ -828,6 +860,7 @@
   function step(dir) {
     if (editorOpen()) {
       collectEditorMatches();
+      updateEdNav();
       if (editorMatches.length) gotoEditorMatch((editorMatchIdx < 0 ? 0 : editorMatchIdx) + dir, true);
       return;
     }
@@ -838,12 +871,18 @@
   search.addEventListener("input", () => {
     clearBtn.hidden = !search.value;
     clearTimeout(debounce);
-    debounce = setTimeout(() => { query = search.value.trim(); hitIndex = 0; render(); if (hits.length) setCurrent(0, true); }, 120);
+    debounce = setTimeout(() => {
+      query = search.value.trim(); hitIndex = 0;
+      if (editorOpen()) { editorMatchIdx = -1; updateEdNav(); if (editorMatches.length) gotoEditorMatch(0, true); }
+      else { render(); if (hits.length) setCurrent(0, true); }
+    }, 120);
   });
   search.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); step(e.shiftKey ? -1 : 1); } });
-  clearBtn.addEventListener("click", () => { search.value = ""; query = ""; clearBtn.hidden = true; render(); search.focus(); });
+  clearBtn.addEventListener("click", () => { search.value = ""; query = ""; clearBtn.hidden = true; updateEdNav(); render(); search.focus(); });
   $("#next").addEventListener("click", () => step(1));
   $("#prev").addEventListener("click", () => step(-1));
+  $("#ednext").addEventListener("click", () => step(1));
+  $("#edprev").addEventListener("click", () => step(-1));
 
   // ---- colours in popover ----
   COLORS.forEach(c => {
@@ -1125,12 +1164,26 @@
       cell.setSelectionRange(m.pos, m.pos + query.length);
       if (scroll) cell.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-    // reflect position in the counter
-    if (tally) tally.textContent = (editorMatchIdx + 1) + "/" + editorMatches.length;
+    const label = (editorMatchIdx + 1) + "/" + editorMatches.length;
+    if (tally) tally.textContent = label;
+    const et = document.getElementById("edtally"); if (et) et.textContent = label;
+  }
+  function updateEdNav() {
+    const ed = document.getElementById("ednav");
+    if (!ed) return;
+    collectEditorMatches();
+    if (query && editorMatches.length) {
+      ed.hidden = false;
+      const et = document.getElementById("edtally");
+      if (et) et.textContent = (Math.max(0, editorMatchIdx) + 1) + "/" + editorMatches.length;
+    } else {
+      ed.hidden = true;
+    }
   }
   function focusMatchInEditor() {
     collectEditorMatches();
     if (editorMatches.length) { nav.hidden = false; gotoEditorMatch(0, true); }
+    updateEdNav();
   }
   function editorOpen() { return sheet.classList.contains("open"); }
 
@@ -1171,6 +1224,7 @@
     const _t = document.getElementById("e-title"); if (_t) { _t.style.background = "var(--surface)"; _t.style.borderBottomColor = "var(--line)"; }
     editingId = null; menu.classList.remove("open");
     editorMatches = []; editorMatchIdx = -1;
+    const _ednav = document.getElementById("ednav"); if (_ednav) _ednav.hidden = true;
     render();
   }
 
@@ -1199,6 +1253,8 @@
   // and pull periodically + when the app regains focus.
   document.getElementById("cloud").addEventListener("click", () => cloud.connect());
   cloud.start();
+  // show stored version + last-save time on launch
+  try { setSavedAt(parseInt(localStorage.getItem(SAVED_KEY) || "0", 10) || Date.now()); } catch (e) { setSavedAt(Date.now()); }
   setInterval(() => cloud.pullNow(), 30000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) cloud.pullNow(); });
 
