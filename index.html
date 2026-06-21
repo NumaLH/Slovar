@@ -44,10 +44,8 @@
     flex: 0 0 auto;
     padding: max(env(safe-area-inset-top), 12px) 14px 10px;
     background: #0c0b0a;
-    border-bottom: 1px solid #000; z-index: 60;
+    border-bottom: 1px solid #000; z-index: 45;
   }
-  /* keep the header interactive above the editor backdrop */
-  body.editing header { position: relative; }
   .titlerow { display: grid; grid-template-columns: 1fr auto; align-items: center; margin-bottom: 10px; }
   .brandwrap { grid-column: 1 / -1; text-align: center; order: -1; margin-bottom: 8px; }
   .histwrap { grid-column: 2; }
@@ -153,7 +151,7 @@
     background: var(--surface); border-radius: 22px 22px 0 0;
     box-shadow: 0 -8px 40px rgba(31,28,23,.2);
     transform: translateY(100%); transition: transform .26s cubic-bezier(.32,.72,0,1);
-    z-index: 41; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom);
+    z-index: 50; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom);
   }
   .sheet.open { transform: translateY(0); }
   .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 9px auto 4px; flex: 0 0 auto; }
@@ -163,7 +161,7 @@
 
   /* popover menu for ⋯ */
   .menu {
-    position: absolute; top: 44px; left: 10px; z-index: 50;
+    position: absolute; top: 44px; left: 10px; z-index: 55;
     background: var(--surface); border: 1px solid var(--line);
     border-radius: 14px; box-shadow: 0 10px 30px rgba(31,28,23,.18);
     padding: 10px; width: 232px; display: none;
