@@ -41,11 +41,14 @@
   }
 
   header {
-    flex: 0 0 auto;
+    position: fixed; top: 0; left: 0; right: 0;
+    transform: translateY(var(--vv-top, 0px));
     padding: max(env(safe-area-inset-top), 12px) 14px 10px;
     background: #0c0b0a;
     border-bottom: 1px solid #000; z-index: 45;
   }
+  /* main content sits below the fixed header */
+  main { margin-top: var(--header-h, 0px); }
   .titlerow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
   .brandwrap { text-align: left; flex: 0 1 auto; min-width: 0; }
   .histwrap { flex: 0 0 auto; }
@@ -184,11 +187,11 @@
   .fab:active { transform: scale(.93); }
 
   /* editor */
-  .sheet-back { position: fixed; left: 0; right: 0; bottom: 0; top: var(--header-h, 0px); background: rgba(31,28,23,.32); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40; }
+  .sheet-back { position: fixed; left: 0; right: 0; bottom: 0; top: var(--sheet-top, var(--header-h, 0px)); background: rgba(31,28,23,.32); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 40; }
   .sheet-back.open { opacity: 1; pointer-events: auto; }
   .sheet {
     position: fixed; left: 0; right: 0; bottom: 0;
-    top: var(--header-h, 0px);
+    top: var(--sheet-top, var(--header-h, 0px));
     background: var(--surface); border-radius: 22px 22px 0 0;
     box-shadow: 0 -8px 40px rgba(31,28,23,.2);
     transform: translateY(110%); transition: transform .26s cubic-bezier(.32,.72,0,1);
@@ -329,7 +332,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.3";
+  const VERSION = "v1.4";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1375,9 +1378,23 @@
     const h = Math.round(headerEl.getBoundingClientRect().height);
     document.documentElement.style.setProperty("--header-h", h + "px");
   }
+  // On Chrome/Safari iOS the keyboard shifts the visual viewport; pin the header to its top
+  function syncVisualViewport() {
+    const vv = window.visualViewport;
+    const offset = vv ? Math.max(0, vv.offsetTop) : 0;
+    document.documentElement.style.setProperty("--vv-top", offset + "px");
+    // sheet & backdrop start below header, accounting for the viewport offset
+    document.documentElement.style.setProperty("--sheet-top", (offset + (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0)) + "px");
+    syncHeaderHeight();
+  }
   syncHeaderHeight();
+  syncVisualViewport();
   window.addEventListener("resize", syncHeaderHeight);
-  if (window.ResizeObserver) { new ResizeObserver(syncHeaderHeight).observe(headerEl); }
+  if (window.ResizeObserver) { new ResizeObserver(syncVisualViewport).observe(headerEl); }
+  if (window.visualViewport) {
+    visualViewport.addEventListener("resize", syncVisualViewport);
+    visualViewport.addEventListener("scroll", syncVisualViewport);
+  }
 
   let resizeT;
   window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(render, 200); });
