@@ -44,8 +44,10 @@
     flex: 0 0 auto;
     padding: max(env(safe-area-inset-top), 12px) 14px 10px;
     background: #0c0b0a;
-    border-bottom: 1px solid #000; z-index: 20;
+    border-bottom: 1px solid #000; z-index: 60;
   }
+  /* keep the header interactive above the editor backdrop */
+  body.editing header { position: relative; }
   .titlerow { display: grid; grid-template-columns: 1fr auto; align-items: center; margin-bottom: 10px; }
   .brandwrap { grid-column: 1 / -1; text-align: center; order: -1; margin-bottom: 8px; }
   .histwrap { grid-column: 2; }
@@ -57,11 +59,15 @@
   .brand span { color: #ffffff; }
   .syncpill { font-size: 11px; color: #b8b0a4; background: #1c1a17; border: 1px solid #2a2723; border-radius: 20px; padding: 3px 9px; }
   .histbtn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #2a2723; background: #1c1a17; color: #cfc7ba; font-size: 15px; cursor: pointer; display: grid; place-items: center; }
-  #cloud.off { color: #8a8276; }
-  #cloud.syncing { color: #ffd633; animation: cloudpulse 1s ease-in-out infinite; }
-  #cloud.on { color: #4ad66d; border-color: #2f5e3a; }
-  #cloud.err { color: #ff6b5e; border-color: #5e2f2f; }
-  @keyframes cloudpulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+  .cloudbtn svg { display: block; }
+  .cloudbtn .cloud-check { opacity: 0; }
+  #cloud.off { color: #8a8276; background: #1c1a17; border-color: #2a2723; }
+  #cloud.syncing { color: #ffd633; background: #2a2410; border-color: #5a4e16; }
+  #cloud.syncing svg { animation: cloudspin 1.1s linear infinite; transform-origin: center; }
+  #cloud.on { color: #0c0b0a; background: #4ad66d; border-color: #4ad66d; }
+  #cloud.on .cloud-check { opacity: 1; }
+  #cloud.err { color: #fff; background: #ff5247; border-color: #ff5247; }
+  @keyframes cloudspin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
   .histbtn:active { transform: scale(.92); }
   .histbtn:disabled { opacity: .32; cursor: default; }
 
@@ -74,12 +80,14 @@
   }
   .searchbox:focus-within { border-color: var(--accent); }
   .searchbox svg { width: 18px; height: 18px; color: var(--ink-soft); flex: 0 0 auto; }
-  #search { flex: 1; border: none; outline: none; background: transparent; font: inherit; font-size: 16px; padding: 11px 8px; color: var(--ink); }
+  #search { flex: 1; border: none; outline: none; background: transparent; font: inherit; font-size: 16px; padding: 11px 8px; color: var(--ink); min-width: 0; }
+  /* hide the browser's built-in search clear (×) so only our button shows */
+  #search::-webkit-search-cancel-button, #search::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
   .nav { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-soft); white-space: nowrap; flex: 0 0 auto; }
   .nav button { border: none; background: var(--accent-soft); color: var(--accent); width: 28px; height: 30px; border-radius: 9px; font-size: 16px; font-weight: 700; cursor: pointer; display: grid; place-items: center; }
   .nav button:active { transform: scale(.92); }
   .nav .tally { min-width: 32px; text-align: center; font-variant-numeric: tabular-nums; font-size: 11px; }
-  .clearbtn { border: none; background: transparent; color: var(--ink-soft); font-size: 20px; cursor: pointer; padding: 4px 4px; }
+  .clearbtn { border: none; background: transparent; color: var(--ink-soft); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px 2px; flex: 0 0 auto; }
 
   main {
     flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
@@ -224,7 +232,9 @@
     <div class="titlerow">
       <div class="brandwrap"><span class="brand">Нюма <span>Галипов</span></span></div>
       <div class="histwrap" style="display:flex; align-items:center; gap:6px;">
-        <button class="histbtn" id="cloud" title="Synchronisation Drive" aria-label="Synchronisation Drive">☁</button>
+        <button class="histbtn cloudbtn" id="cloud" title="Synchronisation Drive" aria-label="Synchronisation Drive">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 9.5 4 4 0 0 0 7 17.5"/><path class="cloud-check" d="M9.5 13.5l2 2 3.5-3.5"/><path class="cloud-spin" d="M12 12v0"/></svg>
+        </button>
         <button class="histbtn" id="undo" title="Annuler" aria-label="Annuler">↶</button>
         <button class="histbtn" id="redo" title="Rétablir" aria-label="Rétablir">↷</button>
       </div>
@@ -929,6 +939,7 @@
 
     function refreshBlank() {
       // a row with no content and not a header is "blank": hide placeholders + speak
+      if (!draft[idx]) return;
       const blank = !l.value.trim() && !r.value.trim() && !draft[idx].head;
       wrap.classList.toggle("blank", blank);
     }
@@ -973,10 +984,19 @@
     l.addEventListener("paste", e => onPaste(l, "l", e));
     r.addEventListener("paste", e => onPaste(r, "r", e));
 
-    l.addEventListener("input", () => { draft[idx].l = l.value; detectInf(l, "l"); autosize(l); fitCell(l, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
-    r.addEventListener("input", () => { draft[idx].r = r.value; detectInf(r, "r"); autosize(r); fitCell(r, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
-    [l, r].forEach(t => t.addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addRow(idx + 1); }
+    l.addEventListener("input", () => { if(!draft[idx])return; draft[idx].l = l.value; detectInf(l, "l"); autosize(l); fitCell(l, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
+    r.addEventListener("input", () => { if(!draft[idx])return; draft[idx].r = r.value; detectInf(r, "r"); autosize(r); fitCell(r, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
+    [l, r].forEach((t, sideIdx) => t.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addRow(idx + 1); return; }
+      // Backspace at the very start of an empty row -> delete the row, focus previous
+      if (e.key === "Backspace") {
+        const cellEmpty = t.selectionStart === 0 && t.selectionEnd === 0;
+        const rowEmpty = !draft[idx].l.trim() && !draft[idx].r.trim();
+        if (cellEmpty && rowEmpty && draft.length > 1) {
+          e.preventDefault();
+          removeRow(idx, sideIdx === 0 ? "l" : "r");
+        }
+      }
     }));
     speak.addEventListener("click", () => {
       speakSeq([{ text: draft[idx].l, lang: LANG_L }, { text: draft[idx].r, lang: LANG_R }], speak);
@@ -1035,12 +1055,27 @@
     draft.splice(idx, 0, { l: "", r: "", head: false });
     renderDraft(idx);
   }
+  function removeRow(idx, side) {
+    if (draft.length <= 1) return;
+    draft.splice(idx, 1);
+    ensureTrailingBlank();
+    const focusIdx = Math.max(0, idx - 1);
+    renderDraft();
+    const cell = erows.children[focusIdx]?.querySelector(".ecell." + (side || "l"))
+              || erows.children[focusIdx]?.querySelector(".ecell.l");
+    if (cell) {
+      cell.focus();
+      const len = cell.value.length;
+      try { cell.setSelectionRange(len, len); } catch (e) {}
+    }
+  }
   function ensureTrailingBlank() {
     const last = draft[draft.length - 1];
     if (!last || last.l.trim() || last.r.trim()) draft.push({ l: "", r: "", head: false });
   }
   function maybeGrow(idx) {
     // only when editing the current last row and it just gained content
+    if (!draft[idx]) return;
     if (idx === draft.length - 1 && (draft[idx].l.trim() || draft[idx].r.trim())) {
       draft.push({ l: "", r: "", head: false });
       erows.appendChild(buildRow(draft[draft.length - 1], draft.length - 1));
@@ -1057,7 +1092,7 @@
     paintSwatches(); applyEditorColor();
     menu.classList.remove("open");
     $("#delete").style.display = note ? "block" : "none";
-    back.classList.add("open"); sheet.classList.add("open");
+    back.classList.add("open"); sheet.classList.add("open"); document.body.classList.add("editing");
     renderDraft();
     // search-in-edit: focus + scroll to the matching cell
     if (note && query) requestAnimationFrame(() => focusMatchInEditor());
@@ -1133,7 +1168,7 @@
       store.save(notes);
     }
     if (window.speechSynthesis) speechSynthesis.cancel();
-    back.classList.remove("open"); sheet.classList.remove("open");
+    back.classList.remove("open"); sheet.classList.remove("open"); document.body.classList.remove("editing");
     sheet.style.background = "var(--surface)";
     const _t = document.getElementById("e-title"); if (_t) { _t.style.background = "var(--surface)"; _t.style.borderBottomColor = "var(--line)"; }
     editingId = null; menu.classList.remove("open");
