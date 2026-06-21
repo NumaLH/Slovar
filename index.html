@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Numa Galipov">
 <meta name="theme-color" content="#fbf9f4">
 <title>Numa Galipov</title>
+<script src="https://apis.google.com/js/api.js" async defer></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   @font-face {
     font-family: 'SlavonTitle';
@@ -55,6 +57,11 @@
   .brand span { color: #ffffff; }
   .syncpill { font-size: 11px; color: #b8b0a4; background: #1c1a17; border: 1px solid #2a2723; border-radius: 20px; padding: 3px 9px; }
   .histbtn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #2a2723; background: #1c1a17; color: #cfc7ba; font-size: 15px; cursor: pointer; display: grid; place-items: center; }
+  #cloud.off { color: #8a8276; }
+  #cloud.syncing { color: #ffd633; animation: cloudpulse 1s ease-in-out infinite; }
+  #cloud.on { color: #4ad66d; border-color: #2f5e3a; }
+  #cloud.err { color: #ff6b5e; border-color: #5e2f2f; }
+  @keyframes cloudpulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
   .histbtn:active { transform: scale(.92); }
   .histbtn:disabled { opacity: .32; cursor: default; }
 
@@ -217,6 +224,7 @@
     <div class="titlerow">
       <div class="brandwrap"><span class="brand">Нюма <span>Галипов</span></span></div>
       <div class="histwrap" style="display:flex; align-items:center; gap:6px;">
+        <button class="histbtn" id="cloud" title="Synchronisation Drive" aria-label="Synchronisation Drive">☁</button>
         <button class="histbtn" id="undo" title="Annuler" aria-label="Annuler">↶</button>
         <button class="histbtn" id="redo" title="Rétablir" aria-label="Rétablir">↷</button>
       </div>
@@ -268,8 +276,196 @@
 
   const store = {
     load() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } },
-    save(n) { localStorage.setItem(KEY, JSON.stringify(n)); }
+    save(n) { localStorage.setItem(KEY, JSON.stringify(n)); cloud.schedulePush(); }
   };
+
+  // ============ Google Drive sync (appDataFolder, newest-per-note wins) ============
+  const cloud = (function () {
+    const CLIENT_ID = "273483109418-krmabqug3fpt666kossnsittcvo74dvl.apps.googleusercontent.com";
+    const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+    const FILENAME = "numa-galipov.json";
+    const TOKEN_KEY = "numagalipov.token";
+
+    let tokenClient = null;
+    let accessToken = null;
+    let tokenExpiry = 0;
+    let fileId = null;
+    let gapiReady = false, gisReady = false;
+    let pushTimer = null;
+    let pulling = false;
+    let started = false;
+
+    function setStatus(cls, title) {
+      const el = document.getElementById("cloud");
+      if (!el) return;
+      el.classList.remove("off","syncing","on","err");
+      el.classList.add(cls);
+      el.title = title || "Drive";
+    }
+
+    // wait until both google libs are present
+    function waitForLibs(cb) {
+      const t = setInterval(() => {
+        if (window.gapi && window.google && google.accounts && google.accounts.oauth2) {
+          clearInterval(t); cb();
+        }
+      }, 100);
+      setTimeout(() => clearInterval(t), 15000);
+    }
+
+    function initGapi(cb) {
+      gapi.load("client", async () => {
+        await gapi.client.init({ discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"] });
+        gapiReady = true; cb();
+      });
+    }
+
+    function initToken() {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPE,
+        callback: (resp) => {
+          if (resp.error) { setStatus("err", "Erreur de connexion"); return; }
+          accessToken = resp.access_token;
+          tokenExpiry = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3000000) - 60000;
+          try { localStorage.setItem(TOKEN_KEY, JSON.stringify({ t: accessToken, e: tokenExpiry })); } catch (e) {}
+          gapi.client.setToken({ access_token: accessToken });
+          onAuthed();
+        }
+      });
+      gisReady = true;
+    }
+
+    function haveValidToken() { return accessToken && Date.now() < tokenExpiry; }
+
+    function ensureToken(interactive) {
+      if (haveValidToken()) { gapi.client.setToken({ access_token: accessToken }); onAuthed(); return; }
+      // try cached token first
+      try {
+        const cached = JSON.parse(localStorage.getItem(TOKEN_KEY) || "null");
+        if (cached && cached.t && Date.now() < cached.e) {
+          accessToken = cached.t; tokenExpiry = cached.e;
+          gapi.client.setToken({ access_token: accessToken });
+          onAuthed(); return;
+        }
+      } catch (e) {}
+      if (tokenClient) {
+        setStatus("syncing", "Connexion…");
+        tokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" });
+      }
+    }
+
+    async function findFile() {
+      const res = await gapi.client.drive.files.list({
+        spaces: "appDataFolder",
+        q: "name='" + FILENAME + "'",
+        fields: "files(id,modifiedTime)",
+        pageSize: 1
+      });
+      if (res.result.files && res.result.files.length) { fileId = res.result.files[0].id; return true; }
+      return false;
+    }
+
+    async function downloadRemote() {
+      if (!fileId) return null;
+      const res = await gapi.client.drive.files.get({ fileId, alt: "media" });
+      try { return JSON.parse(res.body); } catch (e) { return null; }
+    }
+
+    async function createFile(content) {
+      const meta = { name: FILENAME, parents: ["appDataFolder"] };
+      const boundary = "-------numa" + Date.now();
+      const body =
+        "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" +
+        JSON.stringify(meta) + "\r\n" +
+        "--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" +
+        JSON.stringify(content) + "\r\n--" + boundary + "--";
+      const res = await gapi.client.request({
+        path: "/upload/drive/v3/files",
+        method: "POST",
+        params: { uploadType: "multipart" },
+        headers: { "Content-Type": "multipart/related; boundary=" + boundary },
+        body
+      });
+      fileId = res.result.id;
+    }
+
+    async function updateFile(content) {
+      if (!fileId) return createFile(content);
+      await gapi.client.request({
+        path: "/upload/drive/v3/files/" + fileId,
+        method: "PATCH",
+        params: { uploadType: "media" },
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(content)
+      });
+    }
+
+    // merge two note arrays: newest per-note id wins; keep notes present on only one side
+    function merge(local, remote) {
+      const byId = {};
+      (remote || []).forEach(n => { byId[n.id] = n; });
+      (local || []).forEach(n => {
+        const ex = byId[n.id];
+        if (!ex || (n.t || 0) >= (ex.t || 0)) byId[n.id] = n;
+      });
+      // also detect deletions? keep it simple: union (no deletions propagation for now)
+      return Object.values(byId).sort((a, b) => {
+        if (a.col !== b.col) return (a.col||0) - (b.col||0);
+        return (a.ord||0) - (b.ord||0);
+      });
+    }
+
+    async function onAuthed() {
+      try {
+        setStatus("syncing", "Synchronisation…");
+        const exists = await findFile();
+        const remote = exists ? await downloadRemote() : null;
+        if (remote && Array.isArray(remote.notes)) {
+          const merged = merge(notes, remote.notes);
+          const changed = JSON.stringify(merged) !== JSON.stringify(notes);
+          notes = merged;
+          localStorage.setItem(KEY, JSON.stringify(notes));
+          if (changed && typeof render === "function") render();
+        }
+        // push our (merged) state up so remote is current
+        await updateFile({ notes, savedAt: Date.now() });
+        setStatus("on", "Synchronisé avec Drive");
+      } catch (e) {
+        console.error("sync error", e);
+        setStatus("err", "Erreur de synchro");
+      }
+    }
+
+    async function doPush() {
+      if (!haveValidToken()) return;
+      try {
+        setStatus("syncing", "Sauvegarde…");
+        await updateFile({ notes, savedAt: Date.now() });
+        setStatus("on", "Synchronisé avec Drive");
+      } catch (e) { setStatus("err", "Erreur de sauvegarde"); }
+    }
+
+    return {
+      start() {
+        if (started) return; started = true;
+        setStatus("off", "Connexion à Drive…");
+        waitForLibs(() => {
+          initGapi(() => { initToken(); ensureToken(false); });
+        });
+      },
+      connect() { // manual tap on the cloud button
+        if (!gapiReady || !gisReady) { this.start(); return; }
+        ensureToken(true);
+      },
+      schedulePush() {
+        clearTimeout(pushTimer);
+        pushTimer = setTimeout(doPush, 1500);
+      },
+      pullNow() { if (haveValidToken()) onAuthed(); }
+    };
+  })();
+
 
   // ---- history (undo/redo on NOTES, not on the file) ----
   let past = [], future = [];
@@ -965,6 +1161,13 @@
   document.getElementById("undo").addEventListener("click", undo);
   document.getElementById("redo").addEventListener("click", redo);
   updateHistBtns();
+
+  // Drive sync: start automatically, allow manual (re)connect via the cloud button,
+  // and pull periodically + when the app regains focus.
+  document.getElementById("cloud").addEventListener("click", () => cloud.connect());
+  cloud.start();
+  setInterval(() => cloud.pullNow(), 30000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) cloud.pullNow(); });
 
   render();
 })();
