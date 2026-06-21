@@ -153,6 +153,12 @@
     box-shadow: 0 0 0 1.5px var(--surface);
   }
   .card.coloured .hitdot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.6); }
+  .hitdot.current {
+    width: 11px; height: 11px; right: -3.5px;
+    box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+    z-index: 2;
+  }
+  .card.coloured .hitdot.current { box-shadow: 0 0 0 2px rgba(255,255,255,.85), 0 0 0 4px var(--accent); }
   /* resize mode */
   .card.resizing { box-shadow: var(--shadow), 0 0 0 2px var(--accent); cursor: default; }
   .resizebar {
@@ -198,16 +204,19 @@
     z-index: 50; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom);
   }
   .sheet.open { transform: translateY(0); }
+  body.kb-open .sheet { border-radius: 22px; }
   /* scroll position rail inside the editor */
   .scrollrail {
-    position: absolute; right: 3px; top: 52px; bottom: 12px; width: 3px;
-    border-radius: 3px; background: rgba(0,0,0,.06);
+    position: absolute; right: 5px; top: 52px; bottom: 12px; width: 4px;
+    border-radius: 3px; background: rgba(0,0,0,.07);
     opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 3;
   }
   .scrollrail.show { opacity: 1; }
   .scrollthumb {
-    position: absolute; left: -1px; width: 5px; border-radius: 3px;
-    background: var(--accent); opacity: .55; top: 0; height: 30px;
+    position: absolute; right: -2px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); opacity: .9; top: 0;
+    box-shadow: 0 0 0 1.5px var(--surface);
+    transform: translateY(-50%);
     transition: top .05s linear;
   }
   .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 9px auto 4px; flex: 0 0 auto; }
@@ -344,7 +353,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.7";
+  const VERSION = "v1.8";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -996,6 +1005,23 @@
     m.classList.add("current");
     updateTally();
     if (scroll) m.scrollIntoView({ behavior: "smooth", block: "center" });
+    highlightActiveDot(m);
+  }
+  // mark the rail dot corresponding to the current match's row
+  function highlightActiveDot(markEl) {
+    document.querySelectorAll(".hitdot.current").forEach(d => d.classList.remove("current"));
+    const card = markEl.closest(".card");
+    if (!card) return;
+    const row = markEl.closest(".row");
+    if (!row) return;
+    // index of this row among rendered rows
+    const rows = Array.from(card.querySelectorAll(".grid > .row"));
+    const ri = rows.indexOf(row);
+    const matchRowEls = rows.map((r, i) => ({ r, i })).filter(o => o.r.querySelector("mark"));
+    // find dot order: dots are created per matching row in document order
+    const dotIdx = matchRowEls.findIndex(o => o.r === row);
+    const dots = card.querySelectorAll(".hitdot");
+    if (dotIdx >= 0 && dots[dotIdx]) dots[dotIdx].classList.add("current");
   }
   function step(dir) {
     if (editorOpen()) {
@@ -1226,7 +1252,7 @@
     draft.forEach((row, i) => erows.appendChild(buildRow(row, i)));
     if (typeof focusIdx === "number") {
       const cell = erows.children[focusIdx]?.querySelector(".ecell.l");
-      cell && cell.focus();
+      cell && cell.focus({ preventScroll: true });
     }
     requestAnimationFrame(() => { if (typeof updateScrollRail === "function") updateScrollRail(); });
   }
@@ -1244,7 +1270,7 @@
     const cell = erows.children[focusIdx]?.querySelector(".ecell." + (side || "l"))
               || erows.children[focusIdx]?.querySelector(".ecell.l");
     if (cell) {
-      cell.focus();
+      cell.focus({ preventScroll: true });
       const len = cell.value.length;
       try { cell.setSelectionRange(len, len); } catch (e) {}
     }
@@ -1283,7 +1309,7 @@
     requestAnimationFrame(updateScrollRail);
     // search-in-edit: focus + scroll to the matching cell
     if (note && query) requestAnimationFrame(() => focusMatchInEditor());
-    else if (!note) requestAnimationFrame(() => erows.querySelector(".ecell.l")?.focus());
+    else if (!note) requestAnimationFrame(() => erows.querySelector(".ecell.l")?.focus({ preventScroll: true }));
   }
 
   // collect all occurrences of the query in the open editor (in row/side order)
@@ -1310,7 +1336,7 @@
     const m = editorMatches[editorMatchIdx];
     const cell = erows.children[m.row]?.querySelector(".ecell." + m.side);
     if (cell) {
-      cell.focus();
+      cell.focus({ preventScroll: true });
       cell.setSelectionRange(m.pos, m.pos + query.length);
       if (scroll) scrollMatchIntoView(cell);
     }
@@ -1344,11 +1370,8 @@
     if (scrollable <= 4) { rail.classList.remove("show"); return; }
     rail.classList.add("show");
     const railH = rail.clientHeight;
-    const visibleRatio = body.clientHeight / body.scrollHeight;
-    const thumbH = Math.max(24, Math.round(railH * visibleRatio));
-    const maxTop = railH - thumbH;
-    const top = Math.round((body.scrollTop / scrollable) * maxTop);
-    thumb.style.height = thumbH + "px";
+    const ratio = body.scrollTop / scrollable;        // 0..1
+    const top = Math.round(ratio * railH);
     thumb.style.top = top + "px";
   }
   function updateEdNav() {
@@ -1415,7 +1438,7 @@
     ensureTrailingBlank();
     const cells = erows.querySelectorAll(".ecell.l");
     const last = cells[cells.length - 1];
-    if (last) last.focus();
+    if (last) last.focus({ preventScroll: true });
   });
   $("#add").addEventListener("click", () => openEditor(null));
   $("#done").addEventListener("click", () => closeEditor(true));
@@ -1451,6 +1474,7 @@
       kb = Math.max(0, Math.round(layoutH - (vv.offsetTop + vv.height)));
     }
     document.documentElement.style.setProperty("--kb-bottom", kb + "px");
+    document.body.classList.toggle("kb-open", editing && kb > 40);
     syncHeaderHeight();
     // keep the focused cell visible within the shrunken sheet
     if (editing) requestAnimationFrame(keepCaretVisible);
@@ -1468,6 +1492,12 @@
     }
   }
   window.__syncVV = syncVisualViewport;
+  // while editing, keep the page itself pinned to the top so the fixed header never drifts
+  window.addEventListener("scroll", () => {
+    if (document.body.classList.contains("editing") && window.scrollY !== 0) {
+      window.scrollTo(0, 0);
+    }
+  }, { passive: true });
   syncHeaderHeight();
   syncVisualViewport();
   window.addEventListener("resize", syncHeaderHeight);
