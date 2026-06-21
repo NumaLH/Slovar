@@ -130,7 +130,44 @@
   .row.head .cell { font-weight: 700; }
   .row.spacer { height: 10px; }
   .card-body { padding-bottom: 6px; }
-  .card-body.clamp .grid { max-height: 230px; overflow: hidden; }
+  .card-body.clamp { position: relative; }
+  .card-body.clamp .grid { max-height: 210px; overflow: hidden; }
+  /* fade at the bottom when clamped to hint there's more */
+  .card-body.clamp.clipped::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 28px;
+    background: linear-gradient(transparent, var(--card-bg, #fff));
+    pointer-events: none;
+  }
+  /* match position indicator rail on the right edge */
+  .hitrail {
+    position: absolute; top: 40px; bottom: 12px; right: 5px; width: 4px;
+    border-radius: 3px; background: rgba(0,0,0,.07);
+  }
+  .card.coloured .hitrail { background: rgba(0,0,0,.12); }
+  .hitdot {
+    position: absolute; right: -2px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); transform: translateY(-50%);
+    box-shadow: 0 0 0 1.5px var(--surface);
+  }
+  .card.coloured .hitdot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.6); }
+  /* resize mode */
+  .card.resizing { box-shadow: var(--shadow), 0 0 0 2px var(--accent); cursor: default; }
+  .resizebar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--accent);
+    gap: 8px;
+  }
+  .resizegrip {
+    flex: 1; text-align: center; font-size: 13px; font-weight: 600;
+    color: var(--accent); background: var(--accent-soft);
+    padding: 8px 6px; border-radius: 10px; cursor: ns-resize; user-select: none;
+    touch-action: none;
+  }
+  .resizeok {
+    border: none; background: var(--accent); color: #fff; font: inherit;
+    font-size: 14px; font-weight: 700; padding: 8px 16px; border-radius: 10px; cursor: pointer;
+  }
+  .resizeok:active { transform: scale(.95); }
 
   mark { background: var(--hit); color: var(--ink); border-radius: 3px; padding: 0 1px; }
   mark.current { background: var(--hit-active); box-shadow: 0 0 0 2px var(--hit-active); }
@@ -296,7 +333,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.1";
+  const VERSION = "v1.2";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -564,6 +601,7 @@
       return { id: n.id, title: n.title || "", color: n.color || "default", rows,
                col: (typeof n.col === "number" ? n.col : null),
                ord: (typeof n.ord === "number" ? n.ord : null),
+               userHeight: (typeof n.userHeight === "number" ? n.userHeight : null),
                t: n.t || Date.now() };
     });
     // assign col/ord for any note missing them: distribute in current order across 2 cols
@@ -633,26 +671,41 @@
   let dragState = null;
   function attachDrag(card, noteId) {
     const handle = card.querySelector(".draghandle");
-    let startX, startY, longPressTimer, dragging = false, ghost = null;
+    let startX, startY, longPressTimer, dragging = false, ghost = null, startedOnHandle = false;
+
+    // triple-tap on the handle -> enter resize mode
+    let tapCount = 0, tapTimer = null;
+    handle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      tapCount++;
+      clearTimeout(tapTimer);
+      if (tapCount >= 3) { tapCount = 0; enterResizeMode(card, noteId); return; }
+      tapTimer = setTimeout(() => { tapCount = 0; }, 600);
+    });
 
     function pointerDown(e) {
       if (e.button === 1 || e.button === 2) return;
       const pt = e.touches ? e.touches[0] : e;
       startX = pt.clientX; startY = pt.clientY;
-      // long-press on card body, or immediate on handle
-      const onHandle = e.target.closest(".draghandle");
-      const delay = onHandle ? 0 : 280;
-      longPressTimer = setTimeout(() => beginDrag(pt), delay);
+      startedOnHandle = !!e.target.closest(".draghandle");
+      if (startedOnHandle) {
+        // don't start drag immediately: wait for movement (so a tap stays a tap for triple-tap)
+        document.addEventListener("pointermove", checkMove);
+        document.addEventListener("pointerup", pointerUp, { once: true });
+        return;
+      }
+      // long-press on card body to drag
+      longPressTimer = setTimeout(() => beginDrag(pt), 280);
       document.addEventListener("pointermove", checkMove);
       document.addEventListener("pointerup", pointerUp, { once: true });
-      if (onHandle) e.preventDefault();
     }
     function checkMove(e) {
       if (dragging) { onDrag(e); return; }
-      // if user moved a lot before long-press fired, cancel (it's a scroll)
-      if (Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8) {
+      const movedFar = Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8;
+      if (movedFar) {
         clearTimeout(longPressTimer);
-        document.removeEventListener("pointermove", checkMove);
+        if (startedOnHandle) { beginDrag(e); }
+        else document.removeEventListener("pointermove", checkMove);
       }
     }
     function beginDrag(pt) {
@@ -774,6 +827,56 @@
     });
   }
 
+  // resize mode: drag the bottom of the card to set a fixed height, OK to confirm
+  function enterResizeMode(card, noteId) {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const grid = card.querySelector(".grid");
+    if (!grid) return;
+    card.classList.add("resizing");
+    grid.style.overflow = "hidden";
+    // start from current rendered height
+    let h = note.userHeight || Math.min(210, grid.scrollHeight);
+    grid.style.maxHeight = h + "px";
+
+    // bottom drag bar
+    const bar = document.createElement("div");
+    bar.className = "resizebar";
+    bar.innerHTML = `<span class="resizegrip">⇕ étirer</span><button class="resizeok">OK</button>`;
+    card.appendChild(bar);
+
+    const grip = bar.querySelector(".resizegrip");
+    const okBtn = bar.querySelector(".resizeok");
+
+    let dragging = false, startY = 0, startH = 0;
+    function down(e) {
+      dragging = true;
+      const pt = e.touches ? e.touches[0] : e;
+      startY = pt.clientY; startH = h;
+      e.preventDefault(); e.stopPropagation();
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", up, { once: true });
+    }
+    function move(e) {
+      if (!dragging) return;
+      const pt = e.touches ? e.touches[0] : e;
+      h = Math.max(40, Math.min(1200, startH + (pt.clientY - startY)));
+      grid.style.maxHeight = h + "px";
+    }
+    function up() { dragging = false; document.removeEventListener("pointermove", move); }
+    grip.addEventListener("pointerdown", down);
+
+    function finish(e) {
+      if (e) e.stopPropagation();
+      note.userHeight = Math.round(h);
+      store.save(notes);
+      card.classList.remove("resizing");
+      bar.remove();
+      render();
+    }
+    okBtn.addEventListener("click", finish);
+  }
+
   function buildCard(note) {
     const card = document.createElement("article");
     card.className = "card";
@@ -784,18 +887,44 @@
 
     let html = `<span class="draghandle" aria-label="Déplacer">⠿</span>`;
     if (note.title) html += `<h3 class="card-title">${mark(note.title)}</h3>`;
-    html += `<div class="card-body${query ? "" : " clamp"}"><div class="grid">`;
-    note.rows.forEach(r => {
+    // always clamp height so a search match deep in the list doesn't expand the card
+    const matchRows = [];
+    html += `<div class="card-body clamp"><div class="grid">`;
+    note.rows.forEach((r, ri) => {
       if (r.l === "" && r.r === "" && !r.head) {
         html += `<div class="row spacer"></div>`;
         return;
       }
+      const isMatchRow = query && (r.l + " " + r.r).toLowerCase().includes(query.toLowerCase());
+      if (isMatchRow) matchRows.push(ri);
       const cls = "row" + (r.head ? " head" : "");
       html += `<div class="${cls}"><div class="cell l">${mark(r.l)}</div><div class="cell r">${mark(r.r)}</div></div>`;
     });
     html += `</div></div>`;
+    // position-indicator rail: shows roughly where in the note the matches are
+    if (query && matchRows.length && note.rows.length > 1) {
+      let dots = "";
+      const total = note.rows.length - 1;
+      matchRows.forEach(ri => {
+        const pct = Math.round((ri / total) * 100);
+        dots += `<span class="hitdot" style="top:${pct}%"></span>`;
+      });
+      html += `<div class="hitrail" title="${matchRows.length} occurrence(s)">${dots}</div>`;
+    }
     card.innerHTML = html;
-    card.addEventListener("click", e => { if (!card.dataset.suppressClick) openEditor(note.id); });
+    // set the fade colour to match the card, and flag if content is actually clipped
+    card.style.setProperty("--card-bg", colorBg(note.color));
+    // apply a per-note custom height if the user set one
+    if (note.userHeight) {
+      const grid = card.querySelector(".grid");
+      if (grid) grid.style.maxHeight = note.userHeight + "px";
+    }
+    requestAnimationFrame(() => {
+      const body = card.querySelector(".card-body");
+      const grid = card.querySelector(".grid");
+      if (body && grid && grid.scrollHeight > grid.clientHeight + 2) body.classList.add("clipped");
+    });
+    card.addEventListener("click", e => { if (!card.dataset.suppressClick && !card.classList.contains("resizing")) openEditor(note.id); });
     attachDrag(card, note.id);
     return card;
   }
