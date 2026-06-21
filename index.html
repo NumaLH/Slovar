@@ -55,7 +55,7 @@
   .brand {
     font-family: 'SlavonTitle', 'PT Serif', Georgia, serif;
     font-weight: 400; font-size: 22px; line-height: 1; letter-spacing: .5px;
-    color: #ffffff; white-space: nowrap;
+    color: #ffffff; white-space: nowrap; cursor: pointer; user-select: none;
   }
   .brand span { color: #ffffff; }
   .syncpill { font-size: 11px; color: #b8b0a4; background: #1c1a17; border: 1px solid #2a2723; border-radius: 20px; padding: 3px 9px; }
@@ -222,6 +222,7 @@
   .sheet-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
   .sheet-head button { border: none; background: transparent; font: inherit; font-size: 16px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 8px 6px; flex: 0 0 auto; }
   .sheet-head #done { padding: 8px 10px; }
+  .wordcount { font-size: 11px; color: var(--ink-soft); white-space: nowrap; flex: 0 0 auto; opacity: .8; }
   .ednav { display: flex; align-items: center; gap: 6px; margin-left: auto; margin-right: 6px; }
   .ednav .edtally { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; min-width: 30px; text-align: center; }
   .ednav button { background: var(--accent-soft); color: var(--accent); width: 30px; height: 30px; border-radius: 9px; font-size: 17px; font-weight: 700; padding: 0; display: grid; place-items: center; }
@@ -296,7 +297,7 @@
 <body>
   <header>
     <div class="titlerow">
-      <div class="brandwrap"><span class="brand">Нюма <span>Галипов</span></span></div>
+      <div class="brandwrap"><span class="brand" id="brand">Нюма <span>Галипов</span></span></div>
       <div class="histwrap" style="display:flex; align-items:center; gap:4px;">
         <div class="verinfo" id="verinfo">
           <span class="ver" id="ver">v1.0</span>
@@ -331,6 +332,7 @@
   <div class="sheet" id="sheet">
     <div class="sheet-head">
       <input id="e-title" placeholder="Titre">
+      <span class="wordcount" id="wordcount"></span>
       <button class="dots" id="opts" aria-label="Options">⋯</button>
       <button id="done">OK</button>
       <div class="menu" id="menu">
@@ -352,7 +354,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.9";
+  const VERSION = "v2.0";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -512,6 +514,13 @@
       });
     }
 
+    function totalWords(arr) {
+      if (!Array.isArray(arr)) return 0;
+      let n = 0;
+      arr.forEach(note => (note.rows || []).forEach(r => { if ((r.l && r.l.trim()) || (r.r && r.r.trim())) n++; }));
+      return n;
+    }
+
     async function onAuthed() {
       try {
         setStatus("syncing", "Synchronisation…");
@@ -519,12 +528,32 @@
         const remote = exists ? await downloadRemote() : null;
         if (remote && Array.isArray(remote.notes)) {
           const merged = merge(notes, remote.notes);
+          const remoteWords = totalWords(remote.notes);
+          const mergedWords = totalWords(merged);
+          // Safety: if connecting would push a version with notably less content than the
+          // cloud already holds, ask the user before overwriting (protects against an old device).
+          if (remoteWords - mergedWords >= 5) {
+            const ok = window.confirm(
+              "Attention : cet appareil contient moins de mots que la version enregistrée sur le Drive.\n\n" +
+              "Cet appareil : " + mergedWords + " mots\n" +
+              "Sur le Drive : " + remoteWords + " mots\n\n" +
+              "Valider = garder cette version (le Drive sera réduit).\n" +
+              "Annuler = récupérer plutôt la version du Drive."
+            );
+            if (!ok) {
+              // user chose to keep the richer cloud version
+              notes = remote.notes.slice();
+              localStorage.setItem(KEY, JSON.stringify(notes));
+              if (typeof render === "function") render();
+              setStatus("on", "Version du Drive récupérée");
+              return;
+            }
+          }
           const changed = JSON.stringify(merged) !== JSON.stringify(notes);
           notes = merged;
           localStorage.setItem(KEY, JSON.stringify(notes));
           if (changed && typeof render === "function") render();
         }
-        // push our (merged) state up so remote is current
         await updateFile({ notes, savedAt: Date.now() });
         setStatus("on", "Synchronisé avec Drive");
       } catch (e) {
@@ -960,6 +989,7 @@
 
   function render() {
     document.querySelectorAll(".drag-ghost").forEach(g => g.remove());
+    if (typeof renderBrand === "function" && brandShowsCount) renderBrand();
     columns.innerHTML = "";
     normalizeOrder();
     const cols = [];
@@ -1188,8 +1218,8 @@
     l.addEventListener("paste", e => onPaste(l, "l", e));
     r.addEventListener("paste", e => onPaste(r, "r", e));
 
-    l.addEventListener("input", () => { if(!draft[idx])return; draft[idx].l = l.value; detectInf(l, "l"); autosize(l); fitCell(l, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
-    r.addEventListener("input", () => { if(!draft[idx])return; draft[idx].r = r.value; detectInf(r, "r"); autosize(r); fitCell(r, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); });
+    l.addEventListener("input", () => { if(!draft[idx])return; draft[idx].l = l.value; detectInf(l, "l"); autosize(l); fitCell(l, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); updateWordCount(); });
+    r.addEventListener("input", () => { if(!draft[idx])return; draft[idx].r = r.value; detectInf(r, "r"); autosize(r); fitCell(r, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); updateWordCount(); });
     [l, r].forEach((t, sideIdx) => t.addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addRow(idx + 1); return; }
       // Backspace at the very start of an empty row -> delete the row, focus previous
@@ -1254,6 +1284,14 @@
       cell && cell.focus({ preventScroll: true });
     }
     requestAnimationFrame(() => { if (typeof updateScrollRail === "function") updateScrollRail(); });
+    updateWordCount();
+  }
+  function updateWordCount() {
+    const el = document.getElementById("wordcount");
+    if (!el) return;
+    let n = 0;
+    draft.forEach(r => { if ((r.l && r.l.trim()) || (r.r && r.r.trim())) n++; });
+    el.textContent = n ? (n + (n > 1 ? " mots" : " mot")) : "";
   }
   function addRow(at) {
     const idx = (typeof at === "number") ? at : draft.length;
@@ -1303,6 +1341,9 @@
     const sb = document.getElementById("sheet-body");
     if (sb && !sb.__railWired) {
       sb.addEventListener("scroll", updateScrollRail, { passive: true });
+      // a manual touch/wheel cancels auto-centering so we don't fight the user
+      sb.addEventListener("touchstart", () => { __centerTarget = null; }, { passive: true });
+      sb.addEventListener("wheel", () => { __centerTarget = null; }, { passive: true });
       sb.__railWired = true;
     }
     requestAnimationFrame(updateScrollRail);
@@ -1344,27 +1385,40 @@
     const et = document.getElementById("edtally"); if (et) et.textContent = label;
   }
   // scroll the sheet-body so the cell sits in the middle of the area visible above the keyboard
+  let __centerTarget = null, __centerUntil = 0;
+  function centerCellNow() {
+    const cell = __centerTarget;
+    const body = document.querySelector(".sheet-body");
+    if (!cell || !body || !document.body.contains(cell)) return;
+    const bodyRect = body.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    const vv = window.visualViewport;
+    const kbTop = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
+    const bandTop = bodyRect.top;
+    const bandBottom = Math.min(bodyRect.bottom, kbTop);
+    const bandMid = (bandTop + bandBottom) / 2;
+    const delta = (cellRect.top + cellRect.height / 2) - bandMid;
+    if (Math.abs(delta) > 1) {
+      window.__freezeVV = true;
+      body.scrollBy({ top: delta, behavior: "auto" });
+      setTimeout(() => { window.__freezeVV = false; }, 40);
+    }
+    updateScrollRail();
+  }
   function scrollMatchIntoView(cell) {
     const body = document.querySelector(".sheet-body");
     if (!body) { cell.scrollIntoView({ block: "center" }); return; }
-    const doScroll = () => {
-      const bodyRect = body.getBoundingClientRect();
-      const cellRect = cell.getBoundingClientRect();
-      const vv = window.visualViewport;
-      // visible band: from the top of the editor body down to the keyboard's top edge
-      const kbTop = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
-      const bandTop = bodyRect.top;
-      const bandBottom = Math.min(bodyRect.bottom, kbTop);
-      const bandMid = (bandTop + bandBottom) / 2;
-      const delta = (cellRect.top + cellRect.height / 2) - bandMid;
-      window.__freezeVV = true;
-      body.scrollBy({ top: delta, behavior: "auto" });
-      updateScrollRail();
-      setTimeout(() => { window.__freezeVV = false; }, 60);
+    __centerTarget = cell;
+    // keep re-centering for ~700ms so we catch the keyboard's animation/settling
+    __centerUntil = Date.now() + 700;
+    centerCellNow();
+    let n = 0;
+    const tick = () => {
+      centerCellNow();
+      n++;
+      if (Date.now() < __centerUntil) requestAnimationFrame(tick);
     };
-    doScroll();
-    // re-center once the keyboard has settled (its height can change just after focus)
-    setTimeout(doScroll, 250);
+    requestAnimationFrame(tick);
   }
   function updateScrollRail() {
     const body = document.getElementById("sheet-body");
@@ -1442,6 +1496,7 @@
     const _t = document.getElementById("e-title"); if (_t) { _t.style.background = "var(--surface)"; _t.style.borderBottomColor = "var(--line)"; }
     editingId = null; menu.classList.remove("open");
     editorMatches = []; editorMatchIdx = -1;
+    __centerTarget = null;
     const _ednav = document.getElementById("ednav"); if (_ednav) _ednav.hidden = true;
     render();
   }
@@ -1517,6 +1572,12 @@
   if (window.visualViewport) {
     visualViewport.addEventListener("resize", syncVisualViewport);
     visualViewport.addEventListener("scroll", syncVisualViewport);
+    // when the keyboard finishes animating, re-center the active match cell
+    visualViewport.addEventListener("resize", () => {
+      if (__centerTarget && document.body.classList.contains("editing")) {
+        requestAnimationFrame(centerCellNow);
+      }
+    });
   }
 
   let resizeT;
@@ -1528,6 +1589,30 @@
   // Drive sync: start automatically, allow manual (re)connect via the cloud button,
   // and pull periodically + when the app regains focus.
   document.getElementById("cloud").addEventListener("click", () => cloud.connect());
+
+  // count "words" = non-empty lines (a line counts if its left or right cell has text)
+  function countNoteWords(note) {
+    if (!note || !note.rows) return 0;
+    let n = 0;
+    note.rows.forEach(r => { if ((r.l && r.l.trim()) || (r.r && r.r.trim())) n++; });
+    return n;
+  }
+  function countAllWords() {
+    return notes.reduce((sum, n) => sum + countNoteWords(n), 0);
+  }
+  // tap the title to toggle between the app name and the total word count
+  let brandShowsCount = false;
+  const brandEl = document.getElementById("brand");
+  function renderBrand() {
+    if (!brandEl) return;
+    if (brandShowsCount) {
+      const c = countAllWords();
+      brandEl.textContent = c + (c > 1 ? " mots" : " mot");
+    } else {
+      brandEl.innerHTML = 'Нюма <span>Галипов</span>';
+    }
+  }
+  if (brandEl) brandEl.addEventListener("click", () => { brandShowsCount = !brandShowsCount; renderBrand(); syncHeaderHeight(); });
   cloud.start();
   // show stored version + last-save time on launch
   try { setSavedAt(parseInt(localStorage.getItem(SAVED_KEY) || "0", 10) || Date.now()); } catch (e) { setSavedAt(Date.now()); }
