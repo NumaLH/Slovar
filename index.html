@@ -198,6 +198,18 @@
     z-index: 50; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom);
   }
   .sheet.open { transform: translateY(0); }
+  /* scroll position rail inside the editor */
+  .scrollrail {
+    position: absolute; right: 3px; top: 52px; bottom: 12px; width: 3px;
+    border-radius: 3px; background: rgba(0,0,0,.06);
+    opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 3;
+  }
+  .scrollrail.show { opacity: 1; }
+  .scrollthumb {
+    position: absolute; left: -1px; width: 5px; border-radius: 3px;
+    background: var(--accent); opacity: .55; top: 0; height: 30px;
+    transition: top .05s linear;
+  }
   .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 9px auto 4px; flex: 0 0 auto; }
   .sheet-head { display: flex; align-items: center; gap: 10px; padding: 6px 12px 8px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
   .sheet-head button { border: none; background: transparent; font: inherit; font-size: 16px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 8px 6px; flex: 0 0 auto; }
@@ -319,10 +331,11 @@
         <button class="danger" id="delete">Supprimer la note</button>
       </div>
     </div>
-    <div class="sheet-body">
+    <div class="sheet-body" id="sheet-body">
       <div class="erows" id="erows"></div>
       <div class="erows-spacer" id="erows-spacer"></div>
     </div>
+    <div class="scrollrail" id="scrollrail"><div class="scrollthumb" id="scrollthumb"></div></div>
   </div>
 
 <script>
@@ -331,7 +344,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.6";
+  const VERSION = "v1.7";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1215,6 +1228,7 @@
       const cell = erows.children[focusIdx]?.querySelector(".ecell.l");
       cell && cell.focus();
     }
+    requestAnimationFrame(() => { if (typeof updateScrollRail === "function") updateScrollRail(); });
   }
   function addRow(at) {
     const idx = (typeof at === "number") ? at : draft.length;
@@ -1260,6 +1274,13 @@
     $("#delete").style.display = note ? "block" : "none";
     back.classList.add("open"); sheet.classList.add("open"); document.body.classList.add("editing"); if (window.__syncVV) window.__syncVV();
     renderDraft();
+    // scroll-position rail
+    const sb = document.getElementById("sheet-body");
+    if (sb && !sb.__railWired) {
+      sb.addEventListener("scroll", updateScrollRail, { passive: true });
+      sb.__railWired = true;
+    }
+    requestAnimationFrame(updateScrollRail);
     // search-in-edit: focus + scroll to the matching cell
     if (note && query) requestAnimationFrame(() => focusMatchInEditor());
     else if (!note) requestAnimationFrame(() => erows.querySelector(".ecell.l")?.focus());
@@ -1300,16 +1321,35 @@
   // scroll the sheet-body so the cell sits in the middle of the area visible above the keyboard
   function scrollMatchIntoView(cell) {
     const body = document.querySelector(".sheet-body");
-    if (!body) { cell.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    if (!body) { cell.scrollIntoView({ block: "center" }); return; }
     const bodyRect = body.getBoundingClientRect();
     const cellRect = cell.getBoundingClientRect();
-    // visible bottom of the sheet body = min(its own bottom, keyboard top)
     const vv = window.visualViewport;
     const kbTop = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
     const visibleBottom = Math.min(bodyRect.bottom, kbTop);
     const visibleMid = (bodyRect.top + visibleBottom) / 2;
     const delta = (cellRect.top + cellRect.height / 2) - visibleMid;
-    body.scrollBy({ top: delta, behavior: "smooth" });
+    // freeze header re-positioning during the scroll so it doesn't jitter, then use instant scroll
+    window.__freezeVV = true;
+    body.scrollBy({ top: delta, behavior: "auto" });
+    updateScrollRail();
+    setTimeout(() => { window.__freezeVV = false; }, 50);
+  }
+  function updateScrollRail() {
+    const body = document.getElementById("sheet-body");
+    const rail = document.getElementById("scrollrail");
+    const thumb = document.getElementById("scrollthumb");
+    if (!body || !rail || !thumb) return;
+    const scrollable = body.scrollHeight - body.clientHeight;
+    if (scrollable <= 4) { rail.classList.remove("show"); return; }
+    rail.classList.add("show");
+    const railH = rail.clientHeight;
+    const visibleRatio = body.clientHeight / body.scrollHeight;
+    const thumbH = Math.max(24, Math.round(railH * visibleRatio));
+    const maxTop = railH - thumbH;
+    const top = Math.round((body.scrollTop / scrollable) * maxTop);
+    thumb.style.height = thumbH + "px";
+    thumb.style.top = top + "px";
   }
   function updateEdNav() {
     const ed = document.getElementById("ednav");
@@ -1399,6 +1439,7 @@
     // only follow the keyboard-induced offset while the editor is open;
     // in the overview, keep the header stable (no offset) to avoid jitter
     const editing = document.body.classList.contains("editing");
+    if (window.__freezeVV) return; // don't reposition header mid-scroll
     const offset = (editing && vv) ? Math.max(0, vv.offsetTop) : 0;
     document.documentElement.style.setProperty("--vv-top", offset + "px");
     document.documentElement.style.setProperty("--sheet-top", (offset + (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0)) + "px");
