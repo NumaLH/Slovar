@@ -199,8 +199,9 @@
   }
   .sheet.open { transform: translateY(0); }
   .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 9px auto 4px; flex: 0 0 auto; }
-  .sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px 6px; flex: 0 0 auto; }
-  .sheet-head button { border: none; background: transparent; font: inherit; font-size: 16px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 8px 8px; }
+  .sheet-head { display: flex; align-items: center; gap: 10px; padding: 6px 12px 8px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+  .sheet-head button { border: none; background: transparent; font: inherit; font-size: 16px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 8px 6px; flex: 0 0 auto; }
+  .sheet-head #done { padding: 8px 10px; }
   .ednav { display: flex; align-items: center; gap: 6px; margin-left: auto; margin-right: 6px; }
   .ednav .edtally { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; min-width: 30px; text-align: center; }
   .ednav button { background: var(--accent-soft); color: var(--accent); width: 30px; height: 30px; border-radius: 9px; font-size: 17px; font-weight: 700; padding: 0; display: grid; place-items: center; }
@@ -209,7 +210,7 @@
 
   /* popover menu for ⋯ */
   .menu {
-    position: absolute; top: 44px; left: 10px; z-index: 55;
+    position: absolute; top: 48px; right: 12px; z-index: 55;
     background: var(--surface); border: 1px solid var(--line);
     border-radius: 14px; box-shadow: 0 10px 30px rgba(31,28,23,.18);
     padding: 10px; width: 232px; display: none;
@@ -222,15 +223,13 @@
   .swatch.sel::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: #fff; font-weight: 800; text-shadow: 0 0 2px rgba(0,0,0,.4); }
   .menu .danger { width: 100%; text-align: left; border: none; background: transparent; font: inherit; font-size: 14px; color: #c0392b; padding: 8px 6px; cursor: pointer; border-top: 1px solid var(--line); }
 
-  .sheet-body { overflow-y: auto; padding: 0 12px 18px; flex: 1 1 auto; }
+  .sheet-body { overflow-y: auto; padding: 8px 12px 18px; flex: 1 1 auto; }
   #e-title {
-    width: calc(100% + 24px); margin: 0 -12px; box-sizing: border-box;
+    flex: 1 1 auto; min-width: 0; box-sizing: border-box;
     border: none; outline: none;
-    font: inherit; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);
-    position: sticky; top: 0; z-index: 5;
-    background: var(--surface);
-    padding: 10px 18px 10px; 
-    border-bottom: 1px solid var(--line);
+    font: inherit; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);
+    background: transparent;
+    padding: 6px 2px;
   }
 
   /* editable rows */
@@ -311,6 +310,7 @@
   <div class="sheet" id="sheet">
     <div class="grab"></div>
     <div class="sheet-head">
+      <input id="e-title" placeholder="Titre">
       <button class="dots" id="opts" aria-label="Options">⋯</button>
       <button id="done">OK</button>
       <div class="menu" id="menu">
@@ -320,7 +320,6 @@
       </div>
     </div>
     <div class="sheet-body">
-      <input id="e-title" placeholder="Titre">
       <div class="erows" id="erows"></div>
       <div class="erows-spacer" id="erows-spacer"></div>
     </div>
@@ -332,7 +331,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.4";
+  const VERSION = "v1.5";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1025,7 +1024,9 @@
     const bg = colorBg(editColor);
     sheet.style.background = bg;
     const t = document.getElementById("e-title");
-    if (t) { t.style.background = bg; t.style.borderBottomColor = (editColor === "default" ? "var(--line)" : "rgba(0,0,0,.12)"); }
+    if (t) t.style.background = "transparent";
+    const head = document.querySelector(".sheet-head");
+    if (head) head.style.borderBottomColor = (editColor === "default" ? "var(--line)" : "rgba(0,0,0,.14)");
   }
 
   $("#opts").addEventListener("click", e => { e.stopPropagation(); menu.classList.toggle("open"); });
@@ -1257,7 +1258,7 @@
     paintSwatches(); applyEditorColor();
     menu.classList.remove("open");
     $("#delete").style.display = note ? "block" : "none";
-    back.classList.add("open"); sheet.classList.add("open"); document.body.classList.add("editing");
+    back.classList.add("open"); sheet.classList.add("open"); document.body.classList.add("editing"); if (window.__syncVV) window.__syncVV();
     renderDraft();
     // search-in-edit: focus + scroll to the matching cell
     if (note && query) requestAnimationFrame(() => focusMatchInEditor());
@@ -1347,7 +1348,7 @@
       store.save(notes);
     }
     if (window.speechSynthesis) speechSynthesis.cancel();
-    back.classList.remove("open"); sheet.classList.remove("open"); document.body.classList.remove("editing");
+    back.classList.remove("open"); sheet.classList.remove("open"); document.body.classList.remove("editing"); if (window.__syncVV) window.__syncVV();
     sheet.style.background = "var(--surface)";
     const _t = document.getElementById("e-title"); if (_t) { _t.style.background = "var(--surface)"; _t.style.borderBottomColor = "var(--line)"; }
     editingId = null; menu.classList.remove("open");
@@ -1381,16 +1382,19 @@
   // On Chrome/Safari iOS the keyboard shifts the visual viewport; pin the header to its top
   function syncVisualViewport() {
     const vv = window.visualViewport;
-    const offset = vv ? Math.max(0, vv.offsetTop) : 0;
+    // only follow the keyboard-induced offset while the editor is open;
+    // in the overview, keep the header stable (no offset) to avoid jitter
+    const editing = document.body.classList.contains("editing");
+    const offset = (editing && vv) ? Math.max(0, vv.offsetTop) : 0;
     document.documentElement.style.setProperty("--vv-top", offset + "px");
-    // sheet & backdrop start below header, accounting for the viewport offset
     document.documentElement.style.setProperty("--sheet-top", (offset + (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0)) + "px");
     syncHeaderHeight();
   }
+  window.__syncVV = syncVisualViewport;
   syncHeaderHeight();
   syncVisualViewport();
   window.addEventListener("resize", syncHeaderHeight);
-  if (window.ResizeObserver) { new ResizeObserver(syncVisualViewport).observe(headerEl); }
+  if (window.ResizeObserver) { new ResizeObserver(syncHeaderHeight).observe(headerEl); }
   if (window.visualViewport) {
     visualViewport.addEventListener("resize", syncVisualViewport);
     visualViewport.addEventListener("scroll", syncVisualViewport);
