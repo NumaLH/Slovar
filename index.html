@@ -207,7 +207,7 @@
   body.kb-open .sheet { border-radius: 22px; }
   /* scroll position rail inside the editor */
   .scrollrail {
-    position: absolute; right: 5px; top: 52px; bottom: 12px; width: 4px;
+    position: absolute; right: 5px; top: var(--rail-top, 56px); bottom: 12px; width: 4px;
     border-radius: 3px; background: rgba(0,0,0,.07);
     opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 3;
   }
@@ -219,8 +219,7 @@
     transform: translateY(-50%);
     transition: top .05s linear;
   }
-  .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 9px auto 4px; flex: 0 0 auto; }
-  .sheet-head { display: flex; align-items: center; gap: 10px; padding: 6px 12px 8px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+  .sheet-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
   .sheet-head button { border: none; background: transparent; font: inherit; font-size: 16px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 8px 6px; flex: 0 0 auto; }
   .sheet-head #done { padding: 8px 10px; }
   .ednav { display: flex; align-items: center; gap: 6px; margin-left: auto; margin-right: 6px; }
@@ -244,7 +243,8 @@
   .swatch.sel::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: #fff; font-weight: 800; text-shadow: 0 0 2px rgba(0,0,0,.4); }
   .menu .danger { width: 100%; text-align: left; border: none; background: transparent; font: inherit; font-size: 14px; color: #c0392b; padding: 8px 6px; cursor: pointer; border-top: 1px solid var(--line); }
 
-  .sheet-body { overflow-y: auto; padding: 8px 12px 18px; flex: 1 1 auto; }
+  .sheet-body { overflow-y: auto; padding: 8px 12px 18px; flex: 1 1 auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .sheet-body::-webkit-scrollbar { width: 0; height: 0; display: none; }
   #e-title {
     flex: 1 1 auto; min-width: 0; box-sizing: border-box;
     border: none; outline: none;
@@ -329,7 +329,6 @@
 
   <div class="sheet-back" id="back"></div>
   <div class="sheet" id="sheet">
-    <div class="grab"></div>
     <div class="sheet-head">
       <input id="e-title" placeholder="Titre">
       <button class="dots" id="opts" aria-label="Options">⋯</button>
@@ -353,7 +352,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v1.8";
+  const VERSION = "v1.9";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1348,24 +1347,37 @@
   function scrollMatchIntoView(cell) {
     const body = document.querySelector(".sheet-body");
     if (!body) { cell.scrollIntoView({ block: "center" }); return; }
-    const bodyRect = body.getBoundingClientRect();
-    const cellRect = cell.getBoundingClientRect();
-    const vv = window.visualViewport;
-    const kbTop = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
-    const visibleBottom = Math.min(bodyRect.bottom, kbTop);
-    const visibleMid = (bodyRect.top + visibleBottom) / 2;
-    const delta = (cellRect.top + cellRect.height / 2) - visibleMid;
-    // freeze header re-positioning during the scroll so it doesn't jitter, then use instant scroll
-    window.__freezeVV = true;
-    body.scrollBy({ top: delta, behavior: "auto" });
-    updateScrollRail();
-    setTimeout(() => { window.__freezeVV = false; }, 50);
+    const doScroll = () => {
+      const bodyRect = body.getBoundingClientRect();
+      const cellRect = cell.getBoundingClientRect();
+      const vv = window.visualViewport;
+      // visible band: from the top of the editor body down to the keyboard's top edge
+      const kbTop = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
+      const bandTop = bodyRect.top;
+      const bandBottom = Math.min(bodyRect.bottom, kbTop);
+      const bandMid = (bandTop + bandBottom) / 2;
+      const delta = (cellRect.top + cellRect.height / 2) - bandMid;
+      window.__freezeVV = true;
+      body.scrollBy({ top: delta, behavior: "auto" });
+      updateScrollRail();
+      setTimeout(() => { window.__freezeVV = false; }, 60);
+    };
+    doScroll();
+    // re-center once the keyboard has settled (its height can change just after focus)
+    setTimeout(doScroll, 250);
   }
   function updateScrollRail() {
     const body = document.getElementById("sheet-body");
     const rail = document.getElementById("scrollrail");
     const thumb = document.getElementById("scrollthumb");
     if (!body || !rail || !thumb) return;
+    // align the rail's top just below the title/settings head
+    const head = document.querySelector(".sheet-head");
+    if (head) {
+      const sheet = document.getElementById("sheet");
+      const top = head.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top + 6;
+      document.documentElement.style.setProperty("--rail-top", Math.round(top) + "px");
+    }
     const scrollable = body.scrollHeight - body.clientHeight;
     if (scrollable <= 4) { rail.classList.remove("show"); return; }
     rail.classList.add("show");
