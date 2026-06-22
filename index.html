@@ -58,6 +58,7 @@
     color: #ffffff; white-space: nowrap; cursor: pointer; user-select: none;
   }
   .brand span { color: #ffffff; }
+  .brand.counting { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 700; font-size: 20px; }
   .syncpill { font-size: 11px; color: #b8b0a4; background: #1c1a17; border: 1px solid #2a2723; border-radius: 20px; padding: 3px 9px; }
   .histbtn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #2a2723; background: #1c1a17; color: #cfc7ba; font-size: 15px; cursor: pointer; display: grid; place-items: center; }
   .cloudbtn svg { display: block; }
@@ -95,17 +96,17 @@
 
   main {
     flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
-    padding: 14px 10px calc(96px + env(safe-area-inset-bottom));
+    padding: 14px 5px calc(96px + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
   }
-  .columns { display: flex; gap: 10px; align-items: flex-start; }
-  .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; min-height: 120px; border-radius: 16px; transition: background .12s; }
+  .columns { display: flex; gap: 6px; align-items: flex-start; }
+  .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; min-height: 120px; border-radius: 16px; transition: background .12s; }
   .col.coltarget { background: rgba(200,105,58,.10); }
   .coldrop { flex: 1 1 auto; min-height: 60px; }
   .card {
     break-inside: avoid; background: var(--surface);
     border: 1px solid var(--line); border-radius: 16px;
-    padding: 13px 14px 12px; margin: 0 0 10px; box-shadow: var(--shadow);
+    padding: 13px 10px 12px; margin: 0 0 10px; box-shadow: var(--shadow);
     cursor: pointer; transition: transform .12s; position: relative;
   }
   .card:active { transform: scale(.985); }
@@ -116,6 +117,7 @@
   .card.dragover-bot { box-shadow: var(--shadow), 0 3px 0 0 var(--accent); }
   .draghandle { position: absolute; top: 8px; right: 10px; color: var(--ink-soft); font-size: 16px; cursor: grab; opacity: .45; touch-action: none; padding: 4px; line-height: 1; }
   .card.coloured .draghandle { color: rgba(0,0,0,.5); }
+  .draghandle.armed { color: var(--accent); opacity: 1; transform: scale(1.25); }
   .card-title { font-weight: 700; font-size: 15px; line-height: 1.25; margin: 0 0 5px; letter-spacing: -0.01em; }
 
   /* two-column note display with central rule */
@@ -129,6 +131,7 @@
   .cell.l { text-align: right; }
   .cell.r { text-align: left; color: var(--ink); }
   .row.head { margin-top: 9px; }
+  .row.endmark { margin-bottom: 6px; }
   .row.head:first-child { margin-top: 0; }
   .row.head .cell { font-weight: 700; }
   .row.spacer { height: 10px; }
@@ -258,6 +261,7 @@
   .erows { position: relative; }
   .erow { display: grid; grid-template-columns: 20px 1fr 36px 1fr; align-items: stretch; gap: 0; position: relative; }
   .erow.head { margin-top: 12px; }
+  .erow.endmark { margin-bottom: 7px; }
   .erow.head:first-child { margin-top: 0; }
   .erow.head .ecell { font-weight: 700; }
   /* central rule per row (aligned to the speak column) */
@@ -354,7 +358,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v2.0";
+  const VERSION = "v2.1";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -719,45 +723,52 @@
   let dragState = null;
   function attachDrag(card, noteId) {
     const handle = card.querySelector(".draghandle");
-    let startX, startY, longPressTimer, dragging = false, ghost = null, startedOnHandle = false;
+    let startX, startY, dragging = false, ghost = null;
+    let dragArmed = false, armTimer = null;
 
-    // triple-tap on the handle -> enter resize mode
+    // tap counting on the handle: 2 taps arm drag, 3 taps -> resize
     let tapCount = 0, tapTimer = null;
     handle.addEventListener("click", (e) => {
       e.stopPropagation();
       tapCount++;
       clearTimeout(tapTimer);
-      if (tapCount >= 3) { tapCount = 0; enterResizeMode(card, noteId); return; }
-      tapTimer = setTimeout(() => { tapCount = 0; }, 600);
+      if (tapCount === 2) {
+        // arm drag: a subsequent press+move on the handle will drag
+        dragArmed = true;
+        handle.classList.add("armed");
+        clearTimeout(armTimer);
+        armTimer = setTimeout(() => { dragArmed = false; handle.classList.remove("armed"); }, 1500);
+      }
+      if (tapCount >= 3) {
+        tapCount = 0;
+        dragArmed = false; handle.classList.remove("armed"); clearTimeout(armTimer);
+        enterResizeMode(card, noteId);
+        return;
+      }
+      tapTimer = setTimeout(() => { tapCount = 0; }, 450);
     });
 
     function pointerDown(e) {
       if (e.button === 1 || e.button === 2) return;
       const pt = e.touches ? e.touches[0] : e;
       startX = pt.clientX; startY = pt.clientY;
-      startedOnHandle = !!e.target.closest(".draghandle");
-      if (startedOnHandle) {
-        // don't start drag immediately: wait for movement (so a tap stays a tap for triple-tap)
+      const onHandle = !!e.target.closest(".draghandle");
+      // only the handle, and only once drag has been armed by a double-click, can start a drag
+      if (onHandle && dragArmed) {
         document.addEventListener("pointermove", checkMove);
         document.addEventListener("pointerup", pointerUp, { once: true });
         return;
       }
-      // long-press on card body to drag
-      longPressTimer = setTimeout(() => beginDrag(pt), 280);
-      document.addEventListener("pointermove", checkMove);
-      document.addEventListener("pointerup", pointerUp, { once: true });
+      // body press or un-armed handle press: do nothing special (no long-press drag)
     }
     function checkMove(e) {
       if (dragging) { onDrag(e); return; }
-      const movedFar = Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8;
-      if (movedFar) {
-        clearTimeout(longPressTimer);
-        if (startedOnHandle) { beginDrag(e); }
-        else document.removeEventListener("pointermove", checkMove);
-      }
+      const movedFar = Math.abs(e.clientX - startX) > 6 || Math.abs(e.clientY - startY) > 6;
+      if (movedFar && dragArmed) { beginDrag(e); }
     }
     function beginDrag(pt) {
       dragging = true;
+      dragArmed = false; handle.classList.remove("armed"); clearTimeout(armTimer);
       card.dataset.suppressClick = "1";
       card.classList.add("dragging");
       if (navigator.vibrate) navigator.vibrate(8);
@@ -795,7 +806,6 @@
       }
     }
     function pointerUp(e) {
-      clearTimeout(longPressTimer);
       document.removeEventListener("pointermove", checkMove);
       if (!dragging) { return; }
       dragging = false;
@@ -945,7 +955,7 @@
       }
       const isMatchRow = query && (r.l + " " + r.r).toLowerCase().includes(query.toLowerCase());
       if (isMatchRow) matchRows.push(ri);
-      const cls = "row" + (r.head ? " head" : "");
+      const cls = "row" + (r.head ? " head" : "") + (r.mark === 2 ? " endmark" : "");
       html += `<div class="${cls}"><div class="cell l">${mark(r.l)}</div><div class="cell r">${mark(r.r)}</div></div>`;
     });
     html += `</div></div>`;
@@ -1145,6 +1155,9 @@
   // shrink a textarea's font so its (single-line) content fits without horizontal scroll
   function fitCell(t, maxPx, minPx) {
     if (!t) return;
+    // keep the line box height equal to the full-size line so shrunk text stays vertically centred
+    const baseLineHeight = Math.round(maxPx * 1.35);
+    t.style.lineHeight = baseLineHeight + "px";
     t.style.fontSize = maxPx + "px";
     if (t.scrollWidth <= t.clientWidth + 1) return;
     const ratio = t.clientWidth / t.scrollWidth;
@@ -1157,13 +1170,18 @@
     }
   }
 
+  function applyRowMarkClasses(wrap, sec, row) {
+    wrap.classList.toggle("head", row.head === true);
+    wrap.classList.toggle("endmark", row.mark === 2);
+    sec.innerHTML = row.head === true ? "•" : (row.mark === 2 ? "›" : "·");
+  }
   function buildRow(row, idx) {
     const wrap = document.createElement("div");
-    wrap.className = "erow" + (row.head ? " head" : "");
+    wrap.className = "erow" + (row.head ? " head" : "") + (row.mark === 2 ? " endmark" : "");
     // section toggle at the far left
     const sec = document.createElement("button");
-    sec.className = "sectoggle"; sec.title = "Début de section"; sec.setAttribute("aria-label","Début de section");
-    sec.innerHTML = row.head ? "•" : "·";
+    sec.className = "sectoggle"; sec.title = "Marqueur (début de section / fin)"; sec.setAttribute("aria-label","Marqueur");
+    sec.innerHTML = row.head === true ? "•" : (row.mark === 2 ? "›" : "·");
     const l = document.createElement("textarea");
     l.className = "ecell l"; l.value = row.l; l.placeholder = "русский"; l.rows = 1; l.lang = "ru";
     const speak = document.createElement("button");
@@ -1179,9 +1197,13 @@
     }
 
     sec.addEventListener("click", () => {
-      draft[idx].head = !draft[idx].head;
-      wrap.classList.toggle("head", draft[idx].head);
-      sec.innerHTML = draft[idx].head ? "•" : "·";
+      if (!draft[idx]) return;
+      // cycle: 0 normal -> 1 header (bold + space before) -> 2 end-mark (space after) -> 0
+      const cur = draft[idx].head === true ? 1 : (draft[idx].mark === 2 ? 2 : 0);
+      const next = (cur + 1) % 3;
+      draft[idx].head = (next === 1);
+      draft[idx].mark = (next === 2) ? 2 : 0;
+      applyRowMarkClasses(wrap, sec, draft[idx]);
       refreshBlank();
     });
 
@@ -1330,7 +1352,7 @@
     editingId = note ? note.id : null;
     editColor = note ? (note.color || "default") : "default";
     eTitle.value = note ? note.title : "";
-    draft = note ? note.rows.map(r => ({ l: r.l, r: r.r, head: !!r.head })) : [];
+    draft = note ? note.rows.map(r => ({ l: r.l, r: r.r, head: !!r.head, mark: r.mark === 2 ? 2 : 0 })) : [];
     ensureTrailingBlank();
     paintSwatches(); applyEditorColor();
     menu.classList.remove("open");
@@ -1385,7 +1407,7 @@
     const et = document.getElementById("edtally"); if (et) et.textContent = label;
   }
   // scroll the sheet-body so the cell sits in the middle of the area visible above the keyboard
-  let __centerTarget = null, __centerUntil = 0;
+  let __centerTarget = null;
   function centerCellNow() {
     const cell = __centerTarget;
     const body = document.querySelector(".sheet-body");
@@ -1398,10 +1420,11 @@
     const bandBottom = Math.min(bodyRect.bottom, kbTop);
     const bandMid = (bandTop + bandBottom) / 2;
     const delta = (cellRect.top + cellRect.height / 2) - bandMid;
-    if (Math.abs(delta) > 1) {
+    // only move if it's meaningfully off-centre, to avoid sub-pixel flicker
+    if (Math.abs(delta) > 4) {
       window.__freezeVV = true;
       body.scrollBy({ top: delta, behavior: "auto" });
-      setTimeout(() => { window.__freezeVV = false; }, 40);
+      setTimeout(() => { window.__freezeVV = false; }, 30);
     }
     updateScrollRail();
   }
@@ -1409,16 +1432,9 @@
     const body = document.querySelector(".sheet-body");
     if (!body) { cell.scrollIntoView({ block: "center" }); return; }
     __centerTarget = cell;
-    // keep re-centering for ~700ms so we catch the keyboard's animation/settling
-    __centerUntil = Date.now() + 700;
+    // center once now; the visualViewport 'resize' handler will re-center
+    // a single time once the keyboard finishes animating (no polling loop = no flicker)
     centerCellNow();
-    let n = 0;
-    const tick = () => {
-      centerCellNow();
-      n++;
-      if (Date.now() < __centerUntil) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
   }
   function updateScrollRail() {
     const body = document.getElementById("sheet-body");
@@ -1462,7 +1478,7 @@
   function closeEditor(saveIt) {
     if (saveIt) {
       const title = eTitle.value.trim();
-      let rows = draft.map(r => ({ l: r.l.trim(), r: r.r.trim(), head: !!r.head }));
+      let rows = draft.map(r => ({ l: r.l.trim(), r: r.r.trim(), head: !!r.head, mark: r.mark === 2 ? 2 : 0 }));
       // drop only trailing empty rows (keep interior blanks as spacing)
       while (rows.length && !rows[rows.length-1].l && !rows[rows.length-1].r && !rows[rows.length-1].head) rows.pop();
       const hasContent = title || rows.length;
@@ -1572,11 +1588,12 @@
   if (window.visualViewport) {
     visualViewport.addEventListener("resize", syncVisualViewport);
     visualViewport.addEventListener("scroll", syncVisualViewport);
-    // when the keyboard finishes animating, re-center the active match cell
+    // when the keyboard finishes animating, re-center the active match cell (debounced)
+    let __recenterT = null;
     visualViewport.addEventListener("resize", () => {
-      if (__centerTarget && document.body.classList.contains("editing")) {
-        requestAnimationFrame(centerCellNow);
-      }
+      if (!__centerTarget || !document.body.classList.contains("editing")) return;
+      clearTimeout(__recenterT);
+      __recenterT = setTimeout(centerCellNow, 120);
     });
   }
 
@@ -1608,8 +1625,10 @@
     if (brandShowsCount) {
       const c = countAllWords();
       brandEl.textContent = c + (c > 1 ? " mots" : " mot");
+      brandEl.classList.add("counting");
     } else {
       brandEl.innerHTML = 'Нюма <span>Галипов</span>';
+      brandEl.classList.remove("counting");
     }
   }
   if (brandEl) brandEl.addEventListener("click", () => { brandShowsCount = !brandShowsCount; renderBrand(); syncHeaderHeight(); });
