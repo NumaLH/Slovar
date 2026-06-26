@@ -314,6 +314,7 @@
         </button>
         <button class="histbtn" id="undo" title="Annuler" aria-label="Annuler">↶</button>
         <button class="histbtn" id="redo" title="Rétablir" aria-label="Rétablir">↷</button>
+        <button class="histbtn" id="export" title="Exporter / sauvegarder" aria-label="Exporter">⬇</button>
       </div>
     </div>
     <div class="searchwrap">
@@ -361,7 +362,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v2.4";
+  const VERSION = "v2.5";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -389,6 +390,7 @@
     const CLIENT_ID = "273483109418-krmabqug3fpt666kossnsittcvo74dvl.apps.googleusercontent.com";
     const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
     const FILENAME = "numa-galipov.json";
+    const BACKUP_FILENAME = "numa-galipov.backup.json";
     const TOKEN_KEY = "numagalipov.token";
 
     let tokenClient = null;
@@ -506,6 +508,46 @@
       });
     }
 
+    // Keep a single rolling backup of the LAST known cloud state, so a bad overwrite
+    // can be recovered. Stored as a separate appDataFolder file.
+    let backupId = null;
+    async function writeBackup(content) {
+      try {
+        if (totalWords(content.notes) === 0) return; // never back up an empty state
+        if (backupId === null) {
+          const res = await gapi.client.drive.files.list({
+            spaces: "appDataFolder", q: "name='" + BACKUP_FILENAME + "'",
+            fields: "files(id)", pageSize: 1
+          });
+          backupId = (res.result.files && res.result.files.length) ? res.result.files[0].id : "";
+        }
+        const payload = JSON.stringify(content);
+        if (!backupId) {
+          const meta = { name: BACKUP_FILENAME, parents: ["appDataFolder"] };
+          const boundary = "-------numabak" + Date.now();
+          const body =
+            "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" +
+            JSON.stringify(meta) + "\r\n" +
+            "--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" +
+            payload + "\r\n--" + boundary + "--";
+          const res = await gapi.client.request({
+            path: "/upload/drive/v3/files", method: "POST",
+            params: { uploadType: "multipart" },
+            headers: { "Content-Type": "multipart/related; boundary=" + boundary },
+            body
+          });
+          backupId = res.result.id;
+        } else {
+          await gapi.client.request({
+            path: "/upload/drive/v3/files/" + backupId, method: "PATCH",
+            params: { uploadType: "media" },
+            headers: { "Content-Type": "application/json" },
+            body: payload
+          });
+        }
+      } catch (e) { /* backup is best-effort, never block the main sync */ }
+    }
+
     // merge two note arrays: newest per-note id wins; keep notes present on only one side
     function merge(local, remote) {
       const byId = {};
@@ -514,7 +556,6 @@
         const ex = byId[n.id];
         if (!ex || (n.t || 0) >= (ex.t || 0)) byId[n.id] = n;
       });
-      // also detect deletions? keep it simple: union (no deletions propagation for now)
       return Object.values(byId).sort((a, b) => {
         if (a.col !== b.col) return (a.col||0) - (b.col||0);
         return (a.ord||0) - (b.ord||0);
@@ -527,18 +568,35 @@
       arr.forEach(note => (note.rows || []).forEach(r => { if ((r.l && r.l.trim()) || (r.r && r.r.trim())) n++; }));
       return n;
     }
+    // Has this device ever pushed real edits this session? Used to decide if a fresh
+    // (possibly empty / demo) device is allowed to overwrite a richer cloud copy.
+    let localTouched = false;
 
     async function onAuthed() {
       try {
         setStatus("syncing", "Synchronisation…");
         const exists = await findFile();
         const remote = exists ? await downloadRemote() : null;
-        if (remote && Array.isArray(remote.notes)) {
-          const merged = merge(notes, remote.notes);
-          const remoteWords = totalWords(remote.notes);
+        const remoteNotes = (remote && Array.isArray(remote.notes)) ? remote.notes : null;
+
+        if (remoteNotes) {
+          const merged = merge(notes, remoteNotes);
+          const remoteWords = totalWords(remoteNotes);
           const mergedWords = totalWords(merged);
-          // Safety: if connecting would push a version with notably less content than the
-          // cloud already holds, ask the user before overwriting (protects against an old device).
+          const localWords = totalWords(notes);
+
+          // RULE 1 — pull-first safety: a device that hasn't been edited this session and
+          // holds less than the cloud must ADOPT the cloud copy and must NOT push.
+          // This stops a freshly-opened / empty / demo device from wiping the Drive.
+          if (!localTouched && remoteWords > localWords) {
+            notes = remoteNotes.slice();
+            localStorage.setItem(KEY, JSON.stringify(notes));
+            if (typeof render === "function") render();
+            setStatus("on", "Notes récupérées du Drive");
+            return; // do not push
+          }
+
+          // RULE 2 — if merging would still shrink the cloud notably, ask before pushing.
           if (remoteWords - mergedWords >= 5) {
             const ok = window.confirm(
               "Attention : cet appareil contient moins de mots que la version enregistrée sur le Drive.\n\n" +
@@ -548,19 +606,27 @@
               "Annuler = récupérer plutôt la version du Drive."
             );
             if (!ok) {
-              // user chose to keep the richer cloud version
-              notes = remote.notes.slice();
+              notes = remoteNotes.slice();
               localStorage.setItem(KEY, JSON.stringify(notes));
               if (typeof render === "function") render();
               setStatus("on", "Version du Drive récupérée");
               return;
             }
           }
+
           const changed = JSON.stringify(merged) !== JSON.stringify(notes);
           notes = merged;
           localStorage.setItem(KEY, JSON.stringify(notes));
           if (changed && typeof render === "function") render();
+        } else {
+          // No cloud file yet. Only create one if we actually have content,
+          // so an empty device doesn't establish an empty cloud baseline.
+          if (totalWords(notes) === 0) { setStatus("on", "Connecté"); return; }
         }
+
+        // Keep a timestamped backup copy before overwriting the main file,
+        // so a bad overwrite can be recovered.
+        await writeBackup({ notes, savedAt: Date.now() });
         await updateFile({ notes, savedAt: Date.now() });
         setStatus("on", "Synchronisé avec Drive");
       } catch (e) {
@@ -571,6 +637,8 @@
 
     async function doPush() {
       if (!haveValidToken()) return;
+      // a manual/auto push means the user has real content on this device
+      if (totalWords(notes) > 0) localTouched = true;
       try {
         setStatus("syncing", "Sauvegarde…");
         await updateFile({ notes, savedAt: Date.now() });
@@ -1279,8 +1347,28 @@
     });
 
     wrap.appendChild(sec); wrap.appendChild(l); wrap.appendChild(speak); wrap.appendChild(r);
-    requestAnimationFrame(() => { autosize(l); autosize(r); fitCell(l, 16, 9); fitCell(r, 16, 9); syncHeights(wrap); refreshBlank(); });
+    // Defer the expensive autosize/fitCell work until the row is actually visible.
+    // Building thousands of rows up-front was what made big notes slow to open.
+    wrap.__fit = () => { autosize(l); autosize(r); fitCell(l, 16, 9); fitCell(r, 16, 9); syncHeights(wrap); refreshBlank(); };
+    if (rowFitObserver) rowFitObserver.observe(wrap);
+    else requestAnimationFrame(wrap.__fit);
     return wrap;
+  }
+
+  // Lazily fit editor rows as they scroll into view (huge speed-up for long notes)
+  let rowFitObserver = null;
+  function ensureRowFitObserver() {
+    if (rowFitObserver || !("IntersectionObserver" in window)) return;
+    const root = document.getElementById("sheet-body");
+    rowFitObserver = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting && e.target.__fit) {
+          e.target.__fit();
+          e.target.__fit = null;
+          rowFitObserver.unobserve(e.target);
+        }
+      });
+    }, { root: root || null, rootMargin: "300px 0px" });
   }
 
   // parse a pasted block into rows; detect section headers (a line followed by a lone "-")
@@ -1318,13 +1406,31 @@
     cells.forEach(c => c.style.height = h + "px");
   }
 
+  let renderDraftToken = 0;
   function renderDraft(focusIdx) {
+    ensureRowFitObserver();
     erows.innerHTML = "";
-    draft.forEach((row, i) => erows.appendChild(buildRow(row, i)));
+    const CHUNK = 50;
+    // Build the first chunk synchronously so the editor shows instantly,
+    // then append the rest in background frames (big notes used to block here).
+    const first = Math.min(CHUNK, draft.length);
+    for (let i = 0; i < first; i++) erows.appendChild(buildRow(draft[i], i));
     if (typeof focusIdx === "number") {
       const cell = erows.children[focusIdx]?.querySelector(".ecell.l");
       cell && cell.focus({ preventScroll: true });
     }
+    let next = first;
+    renderDraftToken++;
+    const myToken = renderDraftToken;
+    function appendMore() {
+      if (myToken !== renderDraftToken) return; // a newer render started; stop
+      const end = Math.min(next + CHUNK, draft.length);
+      for (let i = next; i < end; i++) erows.appendChild(buildRow(draft[i], i));
+      next = end;
+      if (next < draft.length) requestAnimationFrame(appendMore);
+      else if (typeof updateScrollRail === "function") updateScrollRail();
+    }
+    if (next < draft.length) requestAnimationFrame(appendMore);
     requestAnimationFrame(() => { if (typeof updateScrollRail === "function") updateScrollRail(); });
     updateWordCount();
   }
@@ -1412,10 +1518,18 @@
       }
     }
   }
+  function ensureRowBuilt(targetIdx) {
+    // if chunked rendering hasn't reached this row yet, build up to it now
+    while (erows.children.length <= targetIdx && erows.children.length < draft.length) {
+      const i = erows.children.length;
+      erows.appendChild(buildRow(draft[i], i));
+    }
+  }
   function gotoEditorMatch(idx, scroll) {
     if (!editorMatches.length) return;
     editorMatchIdx = (idx + editorMatches.length) % editorMatches.length;
     const m = editorMatches[editorMatchIdx];
+    ensureRowBuilt(m.row);
     const cell = erows.children[m.row]?.querySelector(".ecell." + m.side);
     if (cell) {
       cell.focus({ preventScroll: true });
@@ -1532,6 +1646,7 @@
     const _t = document.getElementById("e-title"); if (_t) { _t.style.background = "var(--surface)"; _t.style.borderBottomColor = "var(--line)"; }
     editingId = null; menu.classList.remove("open");
     editorMatches = []; editorMatchIdx = -1;
+    if (rowFitObserver) { rowFitObserver.disconnect(); rowFitObserver = null; }
     __centerTarget = null;
     const _ednav = document.getElementById("ednav"); if (_ednav) _ednav.hidden = true;
     render();
@@ -1620,6 +1735,22 @@
   let resizeT;
   window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(render, 200); });
   document.getElementById("undo").addEventListener("click", undo);
+  // Export / local backup: downloads a full-fidelity JSON (re-importable) that keeps
+  // every note, header (bold), end-marker and spacing exactly.
+  function exportNotes() {
+    const stamp = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const name = "numa-galipov-" + stamp.getFullYear() + pad(stamp.getMonth()+1) + pad(stamp.getDate()) + "-" + pad(stamp.getHours()) + pad(stamp.getMinutes());
+    const payload = { app: "numa-galipov", version: VERSION, exportedAt: stamp.toISOString(), notes };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name + ".json";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  }
+  const _exportBtn = document.getElementById("export");
+  if (_exportBtn) _exportBtn.addEventListener("click", exportNotes);
   document.getElementById("redo").addEventListener("click", redo);
   updateHistBtns();
 
