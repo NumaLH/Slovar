@@ -362,7 +362,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v2.5";
+  const VERSION = "v2.6";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1017,36 +1017,53 @@
 
     let html = `<span class="draghandle" aria-label="Déplacer">⠿</span>`;
     if (note.title) html += `<h3 class="card-title">${mark(note.title)}</h3>`;
-    // always clamp height so a search match deep in the list doesn't expand the card
     const matchRows = [];
     html += `<div class="card-body clamp"><div class="grid">`;
-    // Performance: a clamped card only shows ~210px (~12 rows). Rendering thousands of
-    // hidden rows is what made the app slow, so in the overview we render a capped preview.
-    // (Tapping the card opens the full editor with every row.)
     const PREVIEW_CAP = 14;
-    let rendered = 0;
+    const SEARCH_CAP = 30; // max matching rows shown per card while searching
+    const q = query ? query.toLowerCase() : "";
     const totalContentRows = note.rows.filter(r => r.l || r.r).length;
-    for (let ri = 0; ri < note.rows.length; ri++) {
-      const r = note.rows[ri];
-      if (r.l === "" && r.r === "" && !r.head) {
-        if (rendered < PREVIEW_CAP || query) html += `<div class="row spacer"></div>`;
-        continue;
+
+    if (query) {
+      // SEARCH MODE: render ONLY the rows that match (capped). Rendering every row of
+      // every note on each keystroke is what froze/crashed the app.
+      let shown = 0, totalMatches = 0;
+      for (let ri = 0; ri < note.rows.length; ri++) {
+        const r = note.rows[ri];
+        if (!(r.l || r.r)) continue;
+        if (!((r.l + " " + r.r).toLowerCase().includes(q))) continue;
+        totalMatches++;
+        if (shown >= SEARCH_CAP) continue;
+        matchRows.push(ri);
+        const cls = "row" + (r.head ? " head" : "") + (r.mark === 2 ? " endmark" : "");
+        html += `<div class="${cls}"><div class="cell l">${mark(r.l)}</div><div class="cell r">${mark(r.r)}</div></div>`;
+        shown++;
       }
-      const isMatchRow = query && (r.l + " " + r.r).toLowerCase().includes(query.toLowerCase());
-      if (isMatchRow) matchRows.push(ri);
-      // when searching, render all rows (so matches deep in the note are found & dotted);
-      // otherwise cap the preview for speed
-      if (!query && rendered >= PREVIEW_CAP) { rendered++; continue; }
-      const cls = "row" + (r.head ? " head" : "") + (r.mark === 2 ? " endmark" : "");
-      html += `<div class="${cls}"><div class="cell l">${mark(r.l)}</div><div class="cell r">${mark(r.r)}</div></div>`;
-      rendered++;
+      html += `</div>`;
+      if (totalMatches > SEARCH_CAP) {
+        html += `<div class="card-more">+${totalMatches - SEARCH_CAP} autres résultats — appuyer pour ouvrir</div>`;
+      }
+      html += `</div>`;
+    } else {
+      // OVERVIEW MODE: capped preview of the first rows for speed.
+      let rendered = 0;
+      for (let ri = 0; ri < note.rows.length; ri++) {
+        const r = note.rows[ri];
+        if (r.l === "" && r.r === "" && !r.head) {
+          if (rendered < PREVIEW_CAP) html += `<div class="row spacer"></div>`;
+          continue;
+        }
+        if (rendered >= PREVIEW_CAP) { rendered++; continue; }
+        const cls = "row" + (r.head ? " head" : "") + (r.mark === 2 ? " endmark" : "");
+        html += `<div class="${cls}"><div class="cell l">${mark(r.l)}</div><div class="cell r">${mark(r.r)}</div></div>`;
+        rendered++;
+      }
+      html += `</div>`;
+      if (totalContentRows > PREVIEW_CAP) {
+        html += `<div class="card-more">+${totalContentRows - PREVIEW_CAP} lignes — appuyer pour ouvrir</div>`;
+      }
+      html += `</div>`;
     }
-    html += `</div>`;
-    // footer showing how many more lines exist (overview only)
-    if (!query && totalContentRows > PREVIEW_CAP) {
-      html += `<div class="card-more">+${totalContentRows - PREVIEW_CAP} lignes — appuyer pour ouvrir</div>`;
-    }
-    html += `</div>`;
     // position-indicator rail: shows roughly where in the note the matches are
     if (query && matchRows.length && note.rows.length > 1) {
       let dots = "";
@@ -1165,10 +1182,12 @@
     clearBtn.hidden = !search.value;
     clearTimeout(debounce);
     debounce = setTimeout(() => {
-      query = search.value.trim(); hitIndex = 0;
+      const newQuery = search.value.trim();
+      if (newQuery === query) return; // nothing changed, skip the heavy render
+      query = newQuery; hitIndex = 0;
       if (editorOpen()) { editorMatchIdx = -1; updateEdNav(); if (editorMatches.length) gotoEditorMatch(0, true); }
       else { render(); if (hits.length) setCurrent(0, true); }
-    }, 120);
+    }, 200);
   });
   search.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); step(e.shiftKey ? -1 : 1); } });
   clearBtn.addEventListener("click", () => { search.value = ""; query = ""; clearBtn.hidden = true; updateEdNav(); render(); search.focus(); });
@@ -1263,8 +1282,11 @@
     wrap.classList.toggle("endmark", row.mark === 2);
     sec.innerHTML = row.head === true ? "•" : (row.mark === 2 ? "›" : "·");
   }
-  function buildRow(row, idx) {
+  function buildRow(row, idx0) {
     const wrap = document.createElement("div");
+    // idx is resolved live from the DOM position so inserting/removing a row above
+    // this one doesn't require rebuilding the whole note (which froze big notes).
+    const idxOf = () => { const i = Array.prototype.indexOf.call(erows.children, wrap); return i < 0 ? idx0 : i; };
     wrap.className = "erow" + (row.head ? " head" : "") + (row.mark === 2 ? " endmark" : "");
     // section toggle at the far left
     const sec = document.createElement("button");
@@ -1279,19 +1301,19 @@
 
     function refreshBlank() {
       // a row with no content and not a header is "blank": hide placeholders + speak
-      if (!draft[idx]) return;
-      const blank = !l.value.trim() && !r.value.trim() && !draft[idx].head;
+      if (!draft[idxOf()]) return;
+      const blank = !l.value.trim() && !r.value.trim() && !draft[idxOf()].head;
       wrap.classList.toggle("blank", blank);
     }
 
     sec.addEventListener("click", () => {
-      if (!draft[idx]) return;
+      if (!draft[idxOf()]) return;
       // cycle: 0 normal -> 1 header (bold + space before) -> 2 end-mark (space after) -> 0
-      const cur = draft[idx].head === true ? 1 : (draft[idx].mark === 2 ? 2 : 0);
+      const cur = draft[idxOf()].head === true ? 1 : (draft[idxOf()].mark === 2 ? 2 : 0);
       const next = (cur + 1) % 3;
-      draft[idx].head = (next === 1);
-      draft[idx].mark = (next === 2) ? 2 : 0;
-      applyRowMarkClasses(wrap, sec, draft[idx]);
+      draft[idxOf()].head = (next === 1);
+      draft[idxOf()].mark = (next === 2) ? 2 : 0;
+      applyRowMarkClasses(wrap, sec, draft[idxOf()]);
       refreshBlank();
     });
 
@@ -1301,12 +1323,12 @@
       e.preventDefault();
       const parsed = parsePasted(text);
       // replace current row with the parsed rows (merge into current empty cell position)
-      const cur = draft[idx];
+      const cur = draft[idxOf()];
       const curEmpty = !cur.l.trim() && !cur.r.trim();
       const insert = parsed.length ? parsed : [{ l: "", r: "", head: false }];
-      const startAt = curEmpty ? idx : idx + 1;
-      if (curEmpty) draft.splice(idx, 1, ...insert);
-      else draft.splice(idx + 1, 0, ...insert);
+      const startAt = curEmpty ? idxOf() : idxOf() + 1;
+      if (curEmpty) draft.splice(idxOf(), 1, ...insert);
+      else draft.splice(idxOf() + 1, 0, ...insert);
       ensureTrailingBlank();
       renderDraft(Math.min(startAt + insert.length - 1, draft.length - 1));
     }
@@ -1314,8 +1336,8 @@
     const HEAD_RE = /\(\s*(inf\.?|n\.?\s*masc\.?|n\.?\s*fem\.?|n\.?\s*neut\.?)\s*\)/i;
     function detectInf(cell, sideKey) {
       if (HEAD_RE.test(cell.value)) {
-        if (!draft[idx].head) {
-          draft[idx].head = true;
+        if (!draft[idxOf()].head) {
+          draft[idxOf()].head = true;
           wrap.classList.add("head");
           sec.innerHTML = "•";
           syncHeights(wrap);
@@ -1328,22 +1350,22 @@
     l.addEventListener("paste", e => onPaste(l, "l", e));
     r.addEventListener("paste", e => onPaste(r, "r", e));
 
-    l.addEventListener("input", () => { if(!draft[idx])return; draft[idx].l = l.value; detectInf(l, "l"); autosize(l); fitCell(l, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); updateWordCount(); });
-    r.addEventListener("input", () => { if(!draft[idx])return; draft[idx].r = r.value; detectInf(r, "r"); autosize(r); fitCell(r, 16, 9); syncHeights(wrap); maybeGrow(idx); refreshBlank(); updateWordCount(); });
+    l.addEventListener("input", () => { if(!draft[idxOf()])return; draft[idxOf()].l = l.value; detectInf(l, "l"); autosize(l); fitCell(l, 16, 9); syncHeights(wrap); maybeGrow(idxOf()); refreshBlank(); updateWordCount(); });
+    r.addEventListener("input", () => { if(!draft[idxOf()])return; draft[idxOf()].r = r.value; detectInf(r, "r"); autosize(r); fitCell(r, 16, 9); syncHeights(wrap); maybeGrow(idxOf()); refreshBlank(); updateWordCount(); });
     [l, r].forEach((t, sideIdx) => t.addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addRow(idx + 1); return; }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addRow(idxOf() + 1); return; }
       // Backspace at the very start of an empty row -> delete the row, focus previous
       if (e.key === "Backspace") {
         const cellEmpty = t.selectionStart === 0 && t.selectionEnd === 0;
-        const rowEmpty = !draft[idx].l.trim() && !draft[idx].r.trim();
+        const rowEmpty = !draft[idxOf()].l.trim() && !draft[idxOf()].r.trim();
         if (cellEmpty && rowEmpty && draft.length > 1) {
           e.preventDefault();
-          removeRow(idx, sideIdx === 0 ? "l" : "r");
+          removeRow(idxOf(), sideIdx === 0 ? "l" : "r");
         }
       }
     }));
     speak.addEventListener("click", () => {
-      speakSeq([{ text: draft[idx].l, lang: LANG_L }, { text: draft[idx].r, lang: LANG_R }], speak);
+      speakSeq([{ text: draft[idxOf()].l, lang: LANG_L }, { text: draft[idxOf()].r, lang: LANG_R }], speak);
     });
 
     wrap.appendChild(sec); wrap.appendChild(l); wrap.appendChild(speak); wrap.appendChild(r);
@@ -1443,15 +1465,30 @@
   }
   function addRow(at) {
     const idx = (typeof at === "number") ? at : draft.length;
-    draft.splice(idx, 0, { l: "", r: "", head: false });
-    renderDraft(idx);
+    const row = { l: "", r: "", head: false };
+    draft.splice(idx, 0, row);
+    // insert just one DOM row instead of rebuilding the whole note
+    const node = buildRow(row, idx);
+    const ref = erows.children[idx] || null;
+    erows.insertBefore(node, ref);
+    const cell = node.querySelector(".ecell.l");
+    cell && cell.focus({ preventScroll: true });
+    updateWordCount();
+    if (typeof updateScrollRail === "function") updateScrollRail();
   }
   function removeRow(idx, side) {
     if (draft.length <= 1) return;
     draft.splice(idx, 1);
+    // remove just that DOM row
+    const node = erows.children[idx];
+    if (node) node.remove();
     ensureTrailingBlank();
+    // make sure a DOM row exists for any newly added trailing blank
+    if (erows.children.length < draft.length) {
+      const i = draft.length - 1;
+      erows.appendChild(buildRow(draft[i], i));
+    }
     const focusIdx = Math.max(0, idx - 1);
-    renderDraft();
     const cell = erows.children[focusIdx]?.querySelector(".ecell." + (side || "l"))
               || erows.children[focusIdx]?.querySelector(".ecell.l");
     if (cell) {
@@ -1459,6 +1496,8 @@
       const len = cell.value.length;
       try { cell.setSelectionRange(len, len); } catch (e) {}
     }
+    updateWordCount();
+    if (typeof updateScrollRail === "function") updateScrollRail();
   }
   function ensureTrailingBlank() {
     const last = draft[draft.length - 1];
