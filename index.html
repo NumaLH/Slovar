@@ -106,7 +106,7 @@
   .card {
     break-inside: avoid; background: var(--surface);
     border: 1px solid var(--line); border-radius: 16px;
-    padding: 13px 10px 12px; margin: 0 0 10px; box-shadow: var(--shadow);
+    padding: 13px 6px 12px; margin: 0 0 10px; box-shadow: var(--shadow);
     cursor: pointer; transition: transform .12s; position: relative;
   }
   .card:active { transform: scale(.985); }
@@ -127,7 +127,7 @@
     width: 1.5px; background: var(--rule); opacity: .85; transform: translateX(-50%);
   }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0; align-items: baseline; }
-  .cell { font-size: 13.5px; line-height: 1.3; padding: 0 9px; min-height: 1em; white-space: nowrap; overflow: hidden; }
+  .cell { font-size: 13.5px; line-height: 1.3; padding: 0 5px; min-height: 1em; white-space: nowrap; overflow: hidden; }
   .cell.l { text-align: right; }
   .cell.r { text-align: left; color: var(--ink); }
   .row.head { margin-top: 9px; }
@@ -315,6 +315,8 @@
         <button class="histbtn" id="undo" title="Annuler" aria-label="Annuler">↶</button>
         <button class="histbtn" id="redo" title="Rétablir" aria-label="Rétablir">↷</button>
         <button class="histbtn" id="export" title="Exporter / sauvegarder" aria-label="Exporter">⬇</button>
+        <button class="histbtn" id="import" title="Importer un fichier" aria-label="Importer">⬆</button>
+        <input type="file" id="importfile" accept="application/json,.json" style="display:none">
       </div>
     </div>
     <div class="searchwrap">
@@ -362,7 +364,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v2.6";
+  const VERSION = "v2.8";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1059,9 +1061,6 @@
         rendered++;
       }
       html += `</div>`;
-      if (totalContentRows > PREVIEW_CAP) {
-        html += `<div class="card-more">+${totalContentRows - PREVIEW_CAP} lignes — appuyer pour ouvrir</div>`;
-      }
       html += `</div>`;
     }
     // position-indicator rail: shows roughly where in the note the matches are
@@ -1790,6 +1789,57 @@
   }
   const _exportBtn = document.getElementById("export");
   if (_exportBtn) _exportBtn.addEventListener("click", exportNotes);
+
+  // Import a JSON file exported by the app; ADD its notes to the existing ones.
+  function importNotesFromObject(obj) {
+    const incoming = (obj && Array.isArray(obj.notes)) ? obj.notes
+                   : (Array.isArray(obj) ? obj : null);
+    if (!incoming) { alert("Fichier non reconnu : il doit s'agir d'un export JSON de l'app."); return; }
+    // count words per column so imported notes append at the bottom of each column
+    const maxOrd = [0, 0];
+    notes.forEach(n => { const c = n.col || 0; maxOrd[c] = Math.max(maxOrd[c], (n.ord || 0) + 1); });
+    let added = 0, addedWords = 0;
+    incoming.forEach((n, i) => {
+      if (!n || !Array.isArray(n.rows)) return;
+      const col = (n.col === 1) ? 1 : 0;
+      const note = {
+        id: id(),                         // fresh id to avoid clobbering existing notes
+        title: n.title || "",
+        color: n.color || "default",
+        col,
+        ord: maxOrd[col]++,
+        userHeight: n.userHeight || null,
+        rows: n.rows.map(r => ({ l: r.l || "", r: r.r || "", head: !!r.head, mark: r.mark === 2 ? 2 : 0 })),
+        t: Date.now() + i
+      };
+      notes.push(note);
+      added++;
+      addedWords += note.rows.filter(r => r.l || r.r).length;
+    });
+    if (!added) { alert("Aucune note valide trouvée dans ce fichier."); return; }
+    pushHistory();
+    store.save(notes);
+    render();
+    cloud.schedulePush();
+    alert(added + (added > 1 ? " notes ajoutées" : " note ajoutée") + " (" + addedWords + " mots).");
+  }
+  const _importBtn = document.getElementById("import");
+  const _importFile = document.getElementById("importfile");
+  if (_importBtn && _importFile) {
+    _importBtn.addEventListener("click", () => _importFile.click());
+    _importFile.addEventListener("change", () => {
+      const file = _importFile.files && _importFile.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { importNotesFromObject(JSON.parse(reader.result)); }
+        catch (e) { alert("Impossible de lire le fichier : JSON invalide."); }
+        _importFile.value = ""; // allow re-importing the same file later
+      };
+      reader.onerror = () => { alert("Erreur de lecture du fichier."); _importFile.value = ""; };
+      reader.readAsText(file);
+    });
+  }
   document.getElementById("redo").addEventListener("click", redo);
   updateHistBtns();
 
