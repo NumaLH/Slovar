@@ -305,6 +305,17 @@
   /* editable rows */
   .erows { position: relative; }
   .erow { display: grid; grid-template-columns: 20px 1fr 36px 1fr; align-items: stretch; gap: 0; position: relative; }
+  .secai {
+    position: absolute; right: -2px; top: 50%; transform: translateY(-50%);
+    display: none; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(135deg, var(--accent), #9d4d24); color: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,.18); z-index: 3;
+  }
+  .erow.head .secai { display: inline-flex; }
+  .secai:active { transform: translateY(-50%) scale(.9); }
+  .secai svg { display: block; }
+  .secai.busy { opacity: .6; pointer-events: none; }
   .erow.head { margin-top: 12px; }
   .erow.endmark { margin-bottom: 7px; }
   .erow.head:first-child { margin-top: 0; }
@@ -388,7 +399,6 @@
     <div class="sheet-head">
       <input id="e-title" placeholder="Titre">
       <span class="wordcount" id="wordcount"></span>
-      <button class="aibtn" id="aicomplete" title="Compléter avec l'IA" aria-label="Compléter avec l'IA"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2l1.9 4.8L19 8.5l-3.8 3 1.2 5.1L12 14.2 7.6 16.6l1.2-5.1L5 8.5l5.1-1.7z"/></svg><span>IA</span></button>
       <button class="dots" id="opts" aria-label="Options">⋯</button>
       <button id="done">OK</button>
       <div class="menu" id="menu">
@@ -411,7 +421,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v3.1";
+  const VERSION = "v3.2";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1395,6 +1405,11 @@
     speak.className = "speak"; speak.innerHTML = "▶"; speak.title = "Lire";
     const r = document.createElement("textarea");
     r.className = "ecell r"; r.value = row.r; r.placeholder = "français"; r.rows = 1; r.lang = "fr";
+    // per-section AI button (only shown on header rows)
+    const secai = document.createElement("button");
+    secai.className = "secai"; secai.title = "Compléter cette section avec l'IA"; secai.setAttribute("aria-label","Compléter cette section");
+    secai.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2l1.9 4.8L19 8.5l-3.8 3 1.2 5.1L12 14.2 7.6 16.6l1.2-5.1L5 8.5l5.1-1.7z"/></svg>`;
+    secai.addEventListener("click", (e) => { e.stopPropagation(); runAiCompleteSection(idxOf()); });
 
     function refreshBlank() {
       // a row with no content and not a header is "blank": hide placeholders + speak
@@ -1465,7 +1480,7 @@
       speakSeq([{ text: draft[idxOf()].l, lang: LANG_L }, { text: draft[idxOf()].r, lang: LANG_R }], speak);
     });
 
-    wrap.appendChild(sec); wrap.appendChild(l); wrap.appendChild(speak); wrap.appendChild(r);
+    wrap.appendChild(sec); wrap.appendChild(l); wrap.appendChild(speak); wrap.appendChild(r); wrap.appendChild(secai);
     // Defer the expensive autosize/fitCell work until the row is actually visible.
     // Building thousands of rows up-front was what made big notes slow to open.
     wrap.__fit = () => { autosize(l); autosize(r); fitCell(l, 16, 9); fitCell(r, 16, 9); syncHeights(wrap); refreshBlank(); };
@@ -1914,40 +1929,73 @@
     if (!key) { openKeyPrompt(runAiComplete); return; }
     const words = collectDraftWords();
     if (!words.length) { alert("Cette note ne contient aucun mot russe à compléter."); return; }
+    aiRun(words, null);
+  }
 
+  // Complete only one section: from the header row down to (but excluding) the next header.
+  function sectionRange(headerIdx) {
+    let end = draft.length;
+    for (let i = headerIdx + 1; i < draft.length; i++) {
+      if (draft[i] && draft[i].head === true) { end = i; break; }
+    }
+    return { start: headerIdx, end };
+  }
+  async function runAiCompleteSection(headerIdx) {
+    const key = getApiKey();
+    if (!key) { openKeyPrompt(() => runAiCompleteSection(headerIdx)); return; }
+    const { start, end } = sectionRange(headerIdx);
+    const words = [];
+    for (let i = start; i < end; i++) { const l = (draft[i].l || "").trim(); if (l) words.push(l); }
+    if (!words.length) { alert("Cette section ne contient aucun mot russe à compléter."); return; }
+    // insert results right before the next section (at index `end`)
+    aiRun(words, end);
+  }
+
+  // Robustly parse Gemini's JSON, salvaging a truncated array if the response was cut off.
+  function parseAiItems(text) {
+    const clean = (text || "").replace(/```json|```/g, "").trim();
+    // 1) straight parse
+    try { const p = JSON.parse(clean); if (p && Array.isArray(p.items)) return p.items; } catch (e) {}
+    // 2) parse just the {...} block
+    const braced = clean.match(/\{[\s\S]*\}/);
+    if (braced) { try { const p = JSON.parse(braced[0]); if (p && Array.isArray(p.items)) return p.items; } catch (e) {} }
+    // 3) salvage: extract each complete {"ru":...,"fr":...} object even if the array is truncated
+    const items = [];
+    const objRe = /\{[^{}]*?"ru"\s*:\s*"(?:[^"\\]|\\.)*"[^{}]*?"fr"\s*:\s*"(?:[^"\\]|\\.)*"[^{}]*?\}/g;
+    let m;
+    while ((m = objRe.exec(clean)) !== null) {
+      try { const o = JSON.parse(m[0]); if (o.ru && o.fr) items.push(o); } catch (e) {}
+    }
+    return items;
+  }
+
+  async function aiRun(words, insertAt) {
     aiModal.innerHTML = `<div class="ai-status"><span class="ai-spin"></span>Analyse en cours…<br><span style="font-size:12px">Gemini complète les formes manquantes</span></div>`;
     aiBack.classList.add("open");
 
     const instructions = "Tu es un professeur de russe. On te donne une liste de mots russes (noms, adjectifs, verbes) issus d'un carnet de vocabulaire russe vers français. " +
       "Pour chaque mot pertinent, propose les formes grammaticales UTILES manquantes : pour un VERBE, sa conjugaison au présent (я/ты/он/мы/вы/они) et l'infinitif ; pour un NOM ou ADJECTIF, ses déclinaisons principales (nominatif, accusatif, génitif, datif, instrumental, prépositionnel) au singulier, et le pluriel si utile. " +
       "Donne le russe et une courte annotation française entre parenthèses indiquant le cas ou la personne, par exemple : книга => livre, книгу => livre (acc). " +
-      "Ne répète PAS les formes déjà présentes dans la liste fournie. Le champ head vaut true pour une ligne d'en-tête de section (le mot de base d'un verbe ou nom). Sois concis et n'invente pas de mots inexistants.\n\n" +
-      "Mots déjà présents dans la note (ne pas les répéter) :\n" + words.join("\n");
+      "Ne répète PAS les formes déjà présentes dans la liste fournie. Le champ head vaut true seulement pour une ligne d'en-tête de section. Sois concis et n'invente pas de mots inexistants.\n\n" +
+      "Mots déjà présents (ne pas les répéter) :\n" + words.join("\n");
 
     try {
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": getApiKey() },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: instructions }] }],
           generationConfig: {
-            maxOutputTokens: 8192,
+            maxOutputTokens: 16384,
             responseMimeType: "application/json",
             responseSchema: {
               type: "object",
               properties: {
-                items: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      ru: { type: "string" },
-                      fr: { type: "string" },
-                      head: { type: "boolean" }
-                    },
-                    required: ["ru", "fr"]
-                  }
-                }
+                items: { type: "array", items: {
+                  type: "object",
+                  properties: { ru: { type: "string" }, fr: { type: "string" }, head: { type: "boolean" } },
+                  required: ["ru", "fr"]
+                } }
               },
               required: ["items"]
             }
@@ -1964,13 +2012,9 @@
       }
       const data = await res.json();
       const text = (((data.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || "").join("") || "";
-      const clean = text.replace(/```json|```/g, "").trim();
-      let parsed;
-      try { parsed = JSON.parse(clean); }
-      catch (e) { const m = clean.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : null; }
-      const items = parsed && Array.isArray(parsed.items) ? parsed.items : [];
+      const items = parseAiItems(text);
       if (!items.length) { aiModal.innerHTML = `<div class="ai-status">Aucune forme supplémentaire proposée.</div><div class="aibtnrow"><button class="primary" id="aiclose2">Fermer</button></div>`; aiModal.querySelector("#aiclose2").onclick = closeAiModal; return; }
-      showAiPreview(items);
+      showAiPreview(items, insertAt);
     } catch (e) {
       aiModal.innerHTML = `<div class="ai-status" style="color:#b23b3b">${esc(e.message || "Erreur inconnue")}</div>
         <div class="aibtnrow"><button class="ghost" id="airekey">Changer la clé</button><button class="primary" id="aiclose3">Fermer</button></div>`;
@@ -1979,20 +2023,28 @@
     }
   }
 
-  function showAiPreview(items) {
+  function showAiPreview(items, insertAt) {
     const rows = items.map((it) => `<div class="ai-prow new"><div class="l">${esc(it.ru||"")}</div><div class="r">${esc(it.fr||"")}</div></div>`).join("");
+    const where = (typeof insertAt === "number") ? "dans cette section" : "à la fin de ta note";
     aiModal.innerHTML = `
       <h2>✨ ${items.length} forme${items.length>1?"s":""} proposée${items.length>1?"s":""}</h2>
-      <p class="sub">Vérifie les suggestions avant de les ajouter à la fin de ta note.</p>
+      <p class="sub">Vérifie les suggestions avant de les ajouter ${where}.</p>
       <div class="ai-preview">${rows}</div>
       <div class="aibtnrow">
         <button class="ghost" id="aidiscard">Annuler</button>
-        <button class="primary" id="aiadd">Ajouter à la note</button>
+        <button class="primary" id="aiadd">Ajouter</button>
       </div>`;
     aiModal.querySelector("#aidiscard").onclick = closeAiModal;
     aiModal.querySelector("#aiadd").onclick = () => {
-      if (draft.length && (draft[draft.length-1].l || draft[draft.length-1].r)) draft.push({ l:"", r:"" });
-      items.forEach(it => draft.push({ l: it.ru || "", r: it.fr || "", head: !!it.head, mark: 0 }));
+      const newRows = items.map(it => ({ l: it.ru || "", r: it.fr || "", head: false, mark: 0 }));
+      if (typeof insertAt === "number") {
+        // insert within the section, at the given position
+        let at = Math.min(Math.max(insertAt, 0), draft.length);
+        draft.splice(at, 0, ...newRows);
+      } else {
+        if (draft.length && (draft[draft.length-1].l || draft[draft.length-1].r)) draft.push({ l:"", r:"" });
+        newRows.forEach(nr => draft.push(nr));
+      }
       renderDraft();
       updateWordCount();
       closeAiModal();
