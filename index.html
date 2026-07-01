@@ -421,7 +421,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v3.2";
+  const VERSION = "v3.3";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1927,9 +1927,9 @@
   async function runAiComplete() {
     const key = getApiKey();
     if (!key) { openKeyPrompt(runAiComplete); return; }
-    const words = collectDraftWords();
-    if (!words.length) { alert("Cette note ne contient aucun mot russe à compléter."); return; }
-    aiRun(words, null);
+    const pairs = draft.filter(r => (r.l||"").trim()).map(r => ({ ru: r.l.trim(), fr: (r.r||"").trim() }));
+    if (!pairs.length) { alert("Cette note ne contient aucun mot russe à compléter."); return; }
+    aiRun(pairs, null);
   }
 
   // Complete only one section: from the header row down to (but excluding) the next header.
@@ -1944,11 +1944,11 @@
     const key = getApiKey();
     if (!key) { openKeyPrompt(() => runAiCompleteSection(headerIdx)); return; }
     const { start, end } = sectionRange(headerIdx);
-    const words = [];
-    for (let i = start; i < end; i++) { const l = (draft[i].l || "").trim(); if (l) words.push(l); }
-    if (!words.length) { alert("Cette section ne contient aucun mot russe à compléter."); return; }
+    const pairs = [];
+    for (let i = start; i < end; i++) { const l = (draft[i].l || "").trim(); if (l) pairs.push({ ru: l, fr: (draft[i].r||"").trim() }); }
+    if (!pairs.length) { alert("Cette section ne contient aucun mot russe à compléter."); return; }
     // insert results right before the next section (at index `end`)
-    aiRun(words, end);
+    aiRun(pairs, end);
   }
 
   // Robustly parse Gemini's JSON, salvaging a truncated array if the response was cut off.
@@ -1969,15 +1969,24 @@
     return items;
   }
 
-  async function aiRun(words, insertAt) {
+  async function aiRun(pairs, insertAt) {
     aiModal.innerHTML = `<div class="ai-status"><span class="ai-spin"></span>Analyse en cours…<br><span style="font-size:12px">Gemini complète les formes manquantes</span></div>`;
     aiBack.classList.add("open");
 
-    const instructions = "Tu es un professeur de russe. On te donne une liste de mots russes (noms, adjectifs, verbes) issus d'un carnet de vocabulaire russe vers français. " +
-      "Pour chaque mot pertinent, propose les formes grammaticales UTILES manquantes : pour un VERBE, sa conjugaison au présent (я/ты/он/мы/вы/они) et l'infinitif ; pour un NOM ou ADJECTIF, ses déclinaisons principales (nominatif, accusatif, génitif, datif, instrumental, prépositionnel) au singulier, et le pluriel si utile. " +
-      "Donne le russe et une courte annotation française entre parenthèses indiquant le cas ou la personne, par exemple : книга => livre, книгу => livre (acc). " +
-      "Ne répète PAS les formes déjà présentes dans la liste fournie. Le champ head vaut true seulement pour une ligne d'en-tête de section. Sois concis et n'invente pas de mots inexistants.\n\n" +
-      "Mots déjà présents (ne pas les répéter) :\n" + words.join("\n");
+    const existing = pairs.map(p => p.ru + (p.fr ? "  =>  " + p.fr : "")).join("\n");
+
+    const instructions =
+"Tu es un professeur de russe. Tu complètes un carnet de vocabulaire russe→français en respectant EXACTEMENT le style et l'ordre existants.\n\n" +
+"RÈGLES DE FORMAT (impératives) :\n" +
+"1. Copie le style d'annotation déjà utilisé dans la note : le russe à gauche, la traduction française à droite, avec le cas ou la personne entre parenthèses. Exemple du style attendu : книга => livre, puis книгу => livre (acc), книги => livre (gen), etc. Réutilise les mêmes abréviations que la note (acc, gen, dat, instr, prep, +с, -в, ...).\n" +
+"2. ORDRE DES CAS pour un NOM ou ADJECTIF, TOUJOURS dans cet ordre précis : nominatif (forme de base, sans annotation), puis accusatif (acc), puis génitif (gen), puis datif (dat), puis instrumental (instr), puis prépositionnel (prep). D'ABORD tout le SINGULIER dans cet ordre, PUIS le PLURIEL à la fin (mêmes cas, dans le même ordre).\n" +
+"3. ORDRE DES VERBES : d'abord l'infinitif (annoté (inf)), puis le présent dans l'ordre : я, ты, он/она, мы, вы, они.\n" +
+"4. Ne répète JAMAIS une forme déjà présente dans la note.\n" +
+"5. head vaut true UNIQUEMENT si tu introduis un nouveau mot de base servant de titre ; sinon false.\n" +
+"6. N'invente aucun mot inexistant. Si tu n'es pas sûr, n'ajoute rien pour ce mot.\n" +
+"7. Garde les formes groupées par mot de base, dans l'ordre où les mots de base apparaissent dans la note.\n\n" +
+"Contenu ACTUEL de la note (respecte ce style, ne répète pas ces lignes) :\n" + existing +
+"\n\nComplète les déclinaisons/conjugaisons manquantes pour les mots de base ci-dessus, en suivant strictement l'ordre et le format.";
 
     try {
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
@@ -1987,6 +1996,7 @@
           contents: [{ role: "user", parts: [{ text: instructions }] }],
           generationConfig: {
             maxOutputTokens: 16384,
+            temperature: 0.2,
             responseMimeType: "application/json",
             responseSchema: {
               type: "object",

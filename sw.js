@@ -1,6 +1,6 @@
 // Нюма Галипов — service worker
 // Bump CACHE_VERSION whenever you upload a new index.html so phones fetch the fresh copy.
-const CACHE_VERSION = "v31";
+const CACHE_VERSION = "v32";
 const CACHE_NAME = "numagalipov-" + CACHE_VERSION;
 
 // The app is a single self-contained index.html, so that's all we need to cache.
