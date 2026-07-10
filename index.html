@@ -425,7 +425,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v3.5";
+  const VERSION = "v3.6";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -1996,18 +1996,21 @@
     aiBack.classList.add("open");
 
     const existing = lines.map(p => p.ru + (p.fr ? "  =>  " + p.fr : "")).join("\n");
+    // annotation style examples pulled from the user's own note, to copy their format
+    const styleSamples = lines.filter(p => /\(/.test(p.fr)).slice(0, 6).map(p => p.ru + " => " + p.fr);
 
     const instructions =
-"Tu es un professeur de russe. Tu complètes un carnet de vocabulaire russe→français.\n\n" +
+"Tu es un professeur de russe méticuleux. Tu complètes un carnet de vocabulaire russe→français en suivant EXACTEMENT le format existant.\n\n" +
 "RÈGLES IMPÉRATIVES :\n" +
-"1. Pour chaque MOT DE BASE du bloc (une forme sans annotation entre parenthèses), donne SES formes manquantes, et rien d'autre. N'ajoute aucun mot nouveau.\n" +
-"2. ORDRE pour un NOM ou ADJECTIF, strictement : accusatif (acc), génitif (gen), datif (dat), instrumental (instr), prépositionnel (prep). D'ABORD tout le SINGULIER dans cet ordre, PUIS le PLURIEL ensuite (mêmes cas, même ordre, annotés au pluriel).\n" +
-"3. ORDRE pour un VERBE, strictement : infinitif (inf), puis я, ты, он/она, мы, вы, они.\n" +
-"4. Copie EXACTEMENT le style d'annotation du carnet : le russe à gauche, le français à droite avec le cas ou la personne entre parenthèses, comme книгу => livre (acc).\n" +
-"5. Ne répète JAMAIS une forme déjà présente.\n" +
-"6. Si tu n'es pas sûr d'une forme, ne la donne pas.\n\n" +
-"Réponds en JSON : {\"groups\":[{\"base\":\"<le mot de base exactement tel qu'il figure>\",\"forms\":[{\"ru\":\"...\",\"fr\":\"...\"}]}]}\n\n" +
-"Bloc actuel (ne répète pas ces lignes) :\n" + existing;
+"1. Pour chaque MOT DE BASE du bloc (une forme sans annotation entre parenthèses), donne TOUTES ses formes manquantes, et RIEN d'autre. N'ajoute aucun mot nouveau qui ne dérive pas d'un mot de base présent.\n" +
+"2. NOM ou ADJECTIF — donne les 6 cas dans CET ORDRE EXACT : nominatif (déjà présent, ne pas répéter), accusatif (acc), génitif (gen), datif (dat), instrumental (instr), prépositionnel (prep). D'ABORD tout le SINGULIER dans cet ordre, PUIS le PLURIEL (mêmes cas, même ordre, annotés par ex. 'livres (acc)').\n" +
+"3. VERBE — tu DOIS donner TOUTES ces formes, dans CET ORDRE EXACT et sans en omettre aucune : infinitif (inf), puis le présent complet : я (1sg), ты (2sg), он/она (3sg), мы (1pl), вы (2pl), они (3pl). Si le verbe est perfectif et n'a pas de présent, donne le futur simple aux 6 personnes à la place. N'omets JAMAIS une personne.\n" +
+"4. FORMAT — copie exactement le style d'annotation du carnet. Le russe à gauche, le français à droite avec le cas ou la personne entre parenthèses.\n" +
+(styleSamples.length ? "   Exemples du style EXACT à imiter (repris de la note) :\n   " + styleSamples.join("\n   ") + "\n" : "   Exemple : книгу => livre (acc)\n") +
+"5. NE RÉPÈTE JAMAIS une forme déjà présente dans la liste ci-dessous (ni le mot de base, ni une forme déjà donnée).\n" +
+"6. Si une forme n'existe pas ou est incertaine, ne l'invente pas.\n\n" +
+"Réponds en JSON : {\"groups\":[{\"base\":\"<le mot de base exactement tel qu'il figure>\",\"forms\":[{\"ru\":\"<forme russe>\",\"fr\":\"<traduction (annotation)>\"}]}]}\n\n" +
+"Formes DÉJÀ présentes (à ne pas répéter) :\n" + existing;
 
     // Models are tried in order; if one has been retired (404) we fall back to the next.
     // The first one that works is remembered so later calls go straight to it.
@@ -2018,8 +2021,8 @@
     const payload = {
       contents: [{ role: "user", parts: [{ text: instructions }] }],
       generationConfig: {
-        maxOutputTokens: 8192,
-        temperature: 0.1,
+        maxOutputTokens: 12288,
+        temperature: 0,
         responseMimeType: "application/json",
         responseSchema: {
           type: "object",
@@ -2101,8 +2104,11 @@
       </div>`;
     aiModal.querySelector("#aidiscard").onclick = closeAiModal;
     aiModal.querySelector("#aiadd").onclick = () => {
-      // Insert each group's forms directly AFTER the last existing line of that base word.
-      // Work from the end of the block backwards so earlier indices stay valid.
+      // Build a set of forms already in the whole note to drop duplicates the AI may repeat.
+      const norm = s => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+      const existingKeys = new Set(draft.map(r => norm(r.l) + "|" + norm(r.r)));
+      const existingRu = new Set(draft.map(r => norm(r.l)));
+
       const plan = [];
       groups.forEach(g => {
         // find the last row in the block belonging to this base word
@@ -2111,10 +2117,8 @@
           const ru = (draft[i].l || "").trim();
           if (!ru) continue;
           if (ru === g.base) anchor = i;
-          // also treat annotated forms of the same base (already present) as part of the group
         }
         if (anchor === -1) return;
-        // extend the anchor past any already-present annotated forms that follow it
         let last = anchor;
         for (let i = anchor + 1; i < blockEnd; i++) {
           const fr = (draft[i].r || "");
@@ -2122,13 +2126,32 @@
           if (!ru) break;
           if (/\(/.test(fr)) last = i; else break;
         }
-        plan.push({ at: last + 1, rows: g.forms.map(f => ({ l: f.ru || "", r: f.fr || "", head: false, mark: 0 })) });
+        // filter out forms already present (same ru+fr, or same ru with no annotation)
+        const fresh = [];
+        (g.forms || []).forEach(f => {
+          const key = norm(f.ru) + "|" + norm(f.fr);
+          const hasAnnotation = /\(/.test(f.fr || "");
+          if (existingKeys.has(key)) return;                     // exact line already there
+          if (!hasAnnotation && existingRu.has(norm(f.ru))) return; // base form already there
+          existingKeys.add(key); existingRu.add(norm(f.ru));
+          fresh.push({ l: f.ru || "", r: f.fr || "", head: false, mark: 0 });
+        });
+        if (fresh.length) plan.push({ at: last + 1, rows: fresh });
       });
+
+      if (!plan.length) { closeAiModal(); return; }
+
+      // preserve the editor scroll position so the note doesn't jump to the top
+      const sb = document.getElementById("sheet-body");
+      const savedScroll = sb ? sb.scrollTop : 0;
+
       plan.sort((a, b) => b.at - a.at); // insert from the bottom up
       plan.forEach(p => draft.splice(p.at, 0, ...p.rows));
       renderDraft();
       updateWordCount();
       closeAiModal();
+      // restore scroll after the rows are (re)built
+      if (sb) requestAnimationFrame(() => { sb.scrollTop = savedScroll; });
     };
   }
 
