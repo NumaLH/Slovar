@@ -1,6 +1,6 @@
-// Нюма Галипов — service worker
+// Галипов — service worker
 // Bump CACHE_VERSION whenever you upload a new index.html so phones fetch the fresh copy.
-const CACHE_VERSION = "v35";
+const CACHE_VERSION = "v38";
 const CACHE_NAME = "numagalipov-" + CACHE_VERSION;
 
 // The app is a single self-contained index.html, so that's all we need to cache.
@@ -27,6 +27,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// STALE-WHILE-REVALIDATE:
+// Serve the cached copy INSTANTLY (works offline and on flaky metro networks),
+// while refreshing the cache in the background when the network allows.
+// Version updates are picked up on the *next* launch after a successful refresh.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
@@ -37,15 +41,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first for the app shell so updates are picked up when online,
-  // falling back to cache when offline.
   event.respondWith(
-    fetch(req)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-        return res;
-      })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(req, { ignoreSearch: true });
+      const refresh = fetch(req)
+        .then((res) => {
+          if (res && res.ok) cache.put(req, res.clone());
+          return res;
+        })
+        .catch(() => null);
+      if (cached) {
+        // keep the background refresh alive even after we respond
+        event.waitUntil(refresh);
+        return cached;
+      }
+      const net = await refresh;
+      return net || cache.match("./index.html", { ignoreSearch: true });
+    })
   );
 });

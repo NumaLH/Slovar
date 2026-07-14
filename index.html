@@ -425,7 +425,7 @@
 
   const KEY = "numagalipov.v2";
   const SAVED_KEY = "numagalipov.savedAt";
-  const VERSION = "v3.6";
+  const VERSION = "v3.9";
   const LANG_L = "ru-RU";   // colonne gauche : russe
   const LANG_R = "fr-FR";   // colonne droite : français
 
@@ -635,6 +635,13 @@
     // (possibly empty / demo) device is allowed to overwrite a richer cloud copy.
     let localTouched = false;
 
+    // A cheap fingerprint of a note set: ids + timestamps + column/order/height.
+    // If local and remote fingerprints match, there is nothing to merge or upload,
+    // so the periodic sync becomes almost free (no big stringify, no re-upload).
+    function fingerprint(arr) {
+      return (arr || []).map(n => n.id + ":" + (n.t || 0) + ":" + (n.col || 0) + ":" + (n.ord || 0) + ":" + (n.userHeight || 0)).sort().join("|");
+    }
+
     async function onAuthed() {
       try {
         setStatus("syncing", "Synchronisation…");
@@ -643,6 +650,12 @@
         const remoteNotes = (remote && Array.isArray(remote.notes)) ? remote.notes : null;
 
         if (remoteNotes) {
+          // Nothing changed on either side? Stop here — no merge, no save, no upload.
+          if (fingerprint(remoteNotes) === fingerprint(notes)) {
+            setStatus("on", "Synchronisé avec Drive");
+            return;
+          }
+
           const merged = merge(notes, remoteNotes);
           const remoteWords = totalWords(remoteNotes);
           const mergedWords = totalWords(merged);
@@ -1267,7 +1280,7 @@
     const m = hits[hitIndex];
     m.classList.add("current");
     updateTally();
-    if (scroll) m.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (scroll) m.scrollIntoView({ behavior: "auto", block: "center" });
     highlightActiveDot(m);
   }
   // mark the rail dot corresponding to the current match's row
@@ -1416,9 +1429,11 @@
   }
   function buildRow(row, idx0) {
     const wrap = document.createElement("div");
-    // idx is resolved live from the DOM position so inserting/removing a row above
-    // this one doesn't require rebuilding the whole note (which froze big notes).
-    const idxOf = () => { const i = Array.prototype.indexOf.call(erows.children, wrap); return i < 0 ? idx0 : i; };
+    // Each DOM row is tied to its draft row BY REFERENCE. The index is resolved from
+    // the draft itself, so it stays correct even if the DOM is mid-build or was
+    // surgically edited — this is what prevents typing into the wrong line.
+    wrap.__row = row;
+    const idxOf = () => { const i = draft.indexOf(wrap.__row); return i < 0 ? idx0 : i; };
     wrap.className = "erow" + (row.head ? " head" : "") + (row.mark === 2 ? " endmark" : "");
     // section toggle at the far left
     const sec = document.createElement("button");
@@ -1579,18 +1594,22 @@
       const cell = erows.children[focusIdx]?.querySelector(".ecell.l");
       cell && cell.focus({ preventScroll: true });
     }
-    let next = first;
     renderDraftToken++;
     const myToken = renderDraftToken;
     function appendMore() {
       if (myToken !== renderDraftToken) return; // a newer render started; stop
-      const end = Math.min(next + CHUNK, draft.length);
-      for (let i = next; i < end; i++) erows.appendChild(buildRow(draft[i], i));
-      next = end;
-      if (next < draft.length) requestAnimationFrame(appendMore);
+      // Self-correcting: always build the row matching the CURRENT DOM length.
+      // Even if rows were surgically added/removed meanwhile, this can't drift.
+      let built = 0;
+      while (built < CHUNK && erows.children.length < draft.length) {
+        const i = erows.children.length;
+        erows.appendChild(buildRow(draft[i], i));
+        built++;
+      }
+      if (erows.children.length < draft.length) requestAnimationFrame(appendMore);
       else { if (typeof updateScrollRail === "function") updateScrollRail(); refreshBlockStarts(); }
     }
-    if (next < draft.length) requestAnimationFrame(appendMore);
+    if (erows.children.length < draft.length) requestAnimationFrame(appendMore);
     requestAnimationFrame(() => { if (typeof updateScrollRail === "function") updateScrollRail(); refreshBlockStarts(); });
     updateWordCount();
   }
@@ -1605,24 +1624,29 @@
     const idx = (typeof at === "number") ? at : draft.length;
     const row = { l: "", r: "", head: false };
     draft.splice(idx, 0, row);
-    // insert just one DOM row instead of rebuilding the whole note
-    const node = buildRow(row, idx);
-    const ref = erows.children[idx] || null;
-    erows.insertBefore(node, ref);
-    const cell = node.querySelector(".ecell.l");
-    cell && cell.focus({ preventScroll: true });
+    // Insert the DOM node only if the insertion point is within the already-built
+    // region; otherwise the background chunk builder will create it in order.
+    if (idx <= erows.children.length) {
+      const node = buildRow(row, idx);
+      erows.insertBefore(node, erows.children[idx] || null);
+      const cell = node.querySelector(".ecell.l");
+      cell && cell.focus({ preventScroll: true });
+    }
     updateWordCount();
     if (typeof updateScrollRail === "function") updateScrollRail();
   }
   function removeRow(idx, side) {
     if (draft.length <= 1) return;
+    const row = draft[idx];
     draft.splice(idx, 1);
-    // remove just that DOM row
-    const node = erows.children[idx];
-    if (node) node.remove();
+    // remove that row's DOM node, found BY REFERENCE (never by position)
+    for (const el of erows.children) {
+      if (el.__row === row) { el.remove(); break; }
+    }
     ensureTrailingBlank();
-    // make sure a DOM row exists for any newly added trailing blank
-    if (erows.children.length < draft.length) {
+    // append the trailing blank's DOM node only if everything else is already built;
+    // during a background build, the chunk loop will create it in order instead
+    if (erows.children.length === draft.length - 1) {
       const i = draft.length - 1;
       erows.appendChild(buildRow(draft[i], i));
     }
@@ -2004,8 +2028,31 @@
 "RÈGLES IMPÉRATIVES :\n" +
 "1. Pour chaque MOT DE BASE du bloc (une forme sans annotation entre parenthèses), donne TOUTES ses formes manquantes, et RIEN d'autre. N'ajoute aucun mot nouveau qui ne dérive pas d'un mot de base présent.\n" +
 "2. NOM ou ADJECTIF — donne les 6 cas dans CET ORDRE EXACT : nominatif (déjà présent, ne pas répéter), accusatif (acc), génitif (gen), datif (dat), instrumental (instr), prépositionnel (prep). D'ABORD tout le SINGULIER dans cet ordre, PUIS le PLURIEL (mêmes cas, même ordre, annotés par ex. 'livres (acc)').\n" +
-"3. VERBE — tu DOIS donner TOUTES ces formes, dans CET ORDRE EXACT et sans en omettre aucune : infinitif (inf), puis le présent complet : я (1sg), ты (2sg), он/она (3sg), мы (1pl), вы (2pl), они (3pl). Si le verbe est perfectif et n'a pas de présent, donne le futur simple aux 6 personnes à la place. N'omets JAMAIS une personne.\n" +
-"4. FORMAT — copie exactement le style d'annotation du carnet. Le russe à gauche, le français à droite avec le cas ou la personne entre parenthèses.\n" +
+"3. VERBE — donne TOUTES ces formes, dans CET ORDRE EXACT, avec un pronom en MAJUSCULE à gauche (russe) et à droite (français), SANS annotation entre parenthèses (sauf 'passé', 'futur', 'impératif' comme indiqué). Ordre : (a) infinitif, (b) présent, (c) passé, (d) futur, (e) impératif. N'omets JAMAIS une forme.\n" +
+"   MODÈLE EXACT à imiter à la lettre (mêmes majuscules, mêmes pronoms, même disposition) :\n" +
+"   ru:'Получать'                  fr:'Recevoir (inf)'\n" +
+"   ru:'Я получаю'                 fr:'Je reçois'\n" +
+"   ru:'Ты получаешь'              fr:'Tu reçois'\n" +
+"   ru:'Он/Она получает'           fr:'Il/Elle reçoit'\n" +
+"   ru:'Мы получаем'               fr:'Nous recevons'\n" +
+"   ru:'Вы получаете'              fr:'Vous recevez'\n" +
+"   ru:'Они получают'              fr:'Ils/Elles reçoivent'\n" +
+"   ru:'Я получил/получила'        fr:'J'ai reçu/reçue'\n" +
+"   ru:'Ты получил/получила'       fr:'Tu as reçu/reçue'\n" +
+"   ru:'Он/Она получил/получила'   fr:'Il/Elle a reçu/reçue'\n" +
+"   ru:'Мы получили'               fr:'Nous avons reçu'\n" +
+"   ru:'Вы получили'               fr:'Vous avez reçu'\n" +
+"   ru:'Они получили'              fr:'Ils/Elles ont reçu'\n" +
+"   ru:'Я буду получать'           fr:'Je recevrai'\n" +
+"   ru:'Ты будешь получать'        fr:'Tu recevras'\n" +
+"   ru:'Он/Она будет получать'     fr:'Il/Elle recevra'\n" +
+"   ru:'Мы будем получать'         fr:'Nous recevrons'\n" +
+"   ru:'Вы будете получать'        fr:'Vous recevrez'\n" +
+"   ru:'Они будут получать'        fr:'Ils/Elles recevront'\n" +
+"   ru:'Получай!'                  fr:'Reçois !'\n" +
+"   ru:'Получайте!'                fr:'Recevez !'\n" +
+"   RÈGLES du modèle : l'infinitif est annoté '(inf)' ; présent et futur aux 6 personnes (Я, Ты, Он/Она, Мы, Вы, Они) ; au PASSÉ, mettre les DEUX genres au singulier (получил/получила) et une seule forme au pluriel ; impératif au singulier ET au pluriel avec '!' collé au mot russe (Получай!). Si le verbe est perfectif (pas de présent), remplace le présent par le futur simple aux 6 personnes et adapte. JAMAIS de (1sg)/(2sg) pour les verbes.\n" +
+"4. FORMAT DES NOMS/ADJECTIFS — russe à gauche, français à droite avec le cas entre parenthèses.\n" +
 (styleSamples.length ? "   Exemples du style EXACT à imiter (repris de la note) :\n   " + styleSamples.join("\n   ") + "\n" : "   Exemple : книгу => livre (acc)\n") +
 "5. NE RÉPÈTE JAMAIS une forme déjà présente dans la liste ci-dessous (ni le mot de base, ni une forme déjà donnée).\n" +
 "6. Si une forme n'existe pas ou est incertaine, ne l'invente pas.\n\n" +
@@ -2257,7 +2304,7 @@
   cloud.start();
   // show stored version + last-save time on launch
   try { setSavedAt(parseInt(localStorage.getItem(SAVED_KEY) || "0", 10) || Date.now()); } catch (e) { setSavedAt(Date.now()); }
-  setInterval(() => cloud.pullNow(), 30000);
+  setInterval(() => cloud.pullNow(), 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) cloud.pullNow(); });
 
   render();
